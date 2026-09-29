@@ -46,11 +46,15 @@ DEFAULTS = {
            "What is the Free Early Pay offer?"],
     "product": ["What's the status of Stripe autopay?", "Which tickets are in the free tier epic?",
                 "What's planned for the QBO integration?"],
+    "feedback": ["What are the top open issues in the feedback tracker?",
+                 "What did users say about scheduling in testing sessions?",
+                 "Any support requests about invoices recently?"],
 }
 
 
 def defaults(mode: str = "cs") -> list[str]:
-    raw = config.get("SUGGESTED_QUESTIONS_PRODUCT" if mode == "product" else "SUGGESTED_QUESTIONS")
+    raw = config.get({"product": "SUGGESTED_QUESTIONS_PRODUCT", "feedback": "SUGGESTED_QUESTIONS_FEEDBACK"}
+                     .get(mode, "SUGGESTED_QUESTIONS"))
     items = [s.strip() for s in raw.split("|") if s.strip()] if raw else DEFAULTS.get(mode, DEFAULTS["cs"])
     return items[:SHOW]
 

@@ -32,8 +32,9 @@ def base_url() -> str:
     return re.sub(r"/wiki/?$", "", config.require("CONFLUENCE_BASE_URL").rstrip("/"))
 
 
-def projects() -> list[str]:
-    raw = config.get("JIRA_PROJECTS", "LP")
+def projects(mode: str = "product") -> list[str]:
+    raw = (config.get("JIRA_PROJECTS_FEEDBACK", "LP,LPH") if mode == "feedback"
+           else config.get("JIRA_PROJECTS", "LP"))
     keys = [p.strip().upper() for p in raw.split(",") if p.strip()]
     keys = [k for k in keys if _PROJECT_RE.match(k)]
     if not keys:
@@ -78,12 +79,13 @@ def _summary_row(issue: dict, base: str) -> dict:
     }
 
 
-def search(query: str, limit: int = DEFAULT_LIMIT, client: httpx.Client | None = None) -> list[dict]:
+def search(query: str, limit: int = DEFAULT_LIMIT, client: httpx.Client | None = None,
+           mode: str = "product") -> list[dict]:
     query = (query or "").strip()
     if not query:
         return []
     limit = max(1, min(int(limit or DEFAULT_LIMIT), MAX_LIMIT))
-    keys = projects()
+    keys = projects(mode)
     base = base_url()
     own = client is None
     client = client or confluence._client()
@@ -99,9 +101,9 @@ def search(query: str, limit: int = DEFAULT_LIMIT, client: httpx.Client | None =
     return rows[:limit]
 
 
-def get_issue(key: str, client: httpx.Client | None = None) -> dict:
+def get_issue(key: str, client: httpx.Client | None = None, mode: str = "product") -> dict:
     key = (key or "").strip().upper()
-    keys = projects()
+    keys = projects(mode)
     if not _allowed_key(key, keys):
         raise IssueNotFound(key)
     base = base_url()

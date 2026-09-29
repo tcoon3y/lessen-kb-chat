@@ -17,6 +17,10 @@ class ConfluenceUnavailable(Exception):
         self.status = status
 
 
+class NotionLoginError(Exception):
+    """Notion rejected the token, or the research page isn't shared with the integration."""
+
+
 def _msg(exc: Exception) -> str:
     return str(getattr(exc, "message", "") or exc).lower()
 
@@ -27,6 +31,10 @@ def classify(exc: Exception) -> dict:
         return {"kind": "confluence_login", "title": "Can't connect to Confluence",
                 "text": "The bot's Confluence access isn't working, so it can't look anything up. "
                         "Its Atlassian token may have expired. Please let the bot owner know."}
+    if isinstance(exc, NotionLoginError):
+        return {"kind": "notion_login", "title": "Can't connect to Notion",
+                "text": "The bot's Notion access isn't working, so it can't read user research. "
+                        "Please let the bot owner know."}
     if isinstance(exc, ConfluenceUnavailable):
         if exc.status == 429:
             return {"kind": "confluence_rate_limit", "title": "Confluence is busy",

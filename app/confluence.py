@@ -62,7 +62,8 @@ def build_cql(query: str, spaces: list[str]) -> str:
 
 def _excluded_ids() -> set[str]:
     """Pages the bot must never read or cite (e.g. the Documentation Requests list)."""
-    return {config.get("DOCS_REQUEST_PAGE_ID").strip()} - {""}
+    return {config.get("DOCS_REQUEST_PAGE_ID").strip(),
+            (config.get("FEEDBACK_PAGE_ID") or "3971678223").strip()} - {""}
 
 
 def _allowed(space_key: str | None, spaces: list[str]) -> bool:

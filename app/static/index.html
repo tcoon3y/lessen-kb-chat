@@ -34,6 +34,8 @@
   .nav a.active { background: var(--active); color: var(--text); font-weight: 500; }
   .nav svg { width: 16px; height: 16px; flex: none; }
   .tag { margin-left: auto; font-size: 10px; font-weight: 600; color: #1f4fd1; background: var(--brand-pill); border-radius: 999px; padding: 1px 6px; }
+  .modesel { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; }
   .modes { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .modes button { border: 0; background: var(--card); padding: 5px 10px; font-size: 13px; color: var(--muted); cursor: pointer; }
   .modes button.on { background: var(--active); color: var(--text); font-weight: 600; }
@@ -181,6 +183,9 @@
       <a href="#" id="navProduct">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 3A1.5 1.5 0 0 1 4 1.5h8A1.5 1.5 0 0 1 13.5 3v10a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 13zm3 2a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h3a.75.75 0 0 0 0-1.5z"/></svg>
         Product <span class="tag">+ Jira</span></a>
+      <a href="#" id="navFeedback">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 14.2 2.9 9.3A3.4 3.4 0 0 1 8 4.6a3.4 3.4 0 0 1 5.1 4.7z"/></svg>
+        User feedback</a>
     </nav>
     <div class="section" style="margin-top:14px">Docs &amp; usage</div>
     <nav class="nav">
@@ -191,14 +196,14 @@
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 13.5h11a.75.75 0 0 1 0 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11a.75.75 0 0 1 1.5 0zM5 8.25a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0zm3-3a.75.75 0 0 1 1.5 0v6.5a.75.75 0 0 1-1.5 0zm3 1.5a.75.75 0 0 1 1.5 0v5a.75.75 0 0 1-1.5 0z"/></svg>
         Usage</a>
     </nav>
-    <div class="side-foot"><b>Answers from Confluence</b>Product chat also searches Jira</div>
+    <div class="side-foot"><b>Answers with sources</b>Confluence, Jira, Notion research and the CS feedback sheet</div>
   </aside>
 
   <div class="main">
     <div class="topbar">
       <div class="logo"><img src="data:image/png;base64,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" width="80" height="36" alt="Lessen Pro"></div>
       <div class="topbar-actions">
-        <div class="modes" id="topModes"><button type="button" data-mode="cs" class="on">CS</button><button type="button" data-mode="product">Product</button></div>
+        <select class="modesel" id="topModes" aria-label="Chat"><option value="cs">CS</option><option value="product">Product</option><option value="feedback">Feedback</option></select>
         <button class="btn" type="button" id="topDocs" hidden>Request doc</button>
         <button class="btn newChat" type="button" aria-label="New chat" title="New chat">+ New</button>
       </div>
@@ -216,6 +221,14 @@
         <div class="empty">
           <h2>Ask a customer success question</h2>
           Answers come from Confluence, with links to the pages used.
+          <div class="examples-label" hidden>Popular questions</div>
+          <div class="examples"></div>
+        </div>
+      </main>
+      <main class="messages" id="messages-feedback" hidden>
+        <div class="empty">
+          <h2>Ask about user feedback</h2>
+          Answers come from Notion user research, the CS feedback tracker, and Jira (LP and LPH support requests).
           <div class="examples-label" hidden>Popular questions</div>
           <div class="examples"></div>
         </div>
@@ -269,7 +282,7 @@
         </div>
       </section>
       <section class="usec">
-        <h2>Confluence &amp; Jira</h2>
+        <h2>Confluence, Jira &amp; Notion</h2>
         <div class="tiles" id="tilesConf"></div>
       </section>
       <section class="usec" id="docSec">
@@ -305,6 +318,7 @@
   const MODES = {
     cs: { title: "Customer success", placeholder: "Ask a question about Lessen Pro…", history: [] },
     product: { title: "Product", placeholder: "Ask about features, tickets or status…", history: [] },
+    feedback: { title: "User feedback", placeholder: "Ask what users and customers are saying…", history: [] },
   };
   let mode = "cs";
   let messages = $("messages-cs");   // history for each chat lives in this tab only
@@ -377,11 +391,13 @@
     div.className = "sources";
     const yearAgo = Date.now() - 365 * 864e5;
     div.innerHTML = "Sources<ul>" + sources.map((s) => {
-      const jira = s.kind === "jira";
-      const t = Date.parse(s.last_updated || ""), stale = !jira && t && t < yearAgo, when = fmtDate(s.last_updated);
+      const jira = s.kind === "jira", label = { notion: "Notion", sheet: "Sheet" }[s.kind];
+      const t = Date.parse(s.last_updated || ""), stale = !jira && s.kind !== "sheet" && t && t < yearAgo;
+      const when = s.kind === "sheet" && s.last_updated
+        ? `synced ${new Date(s.last_updated).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : fmtDate(s.last_updated);
       const tip = when ? (stale ? `Last updated ${when}. This page may be out of date.` : `Last updated ${when}`) : "";
       return `<li><a class="${stale ? "stale" : ""}" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(tip)}">` +
-        `${esc(s.title)}${jira && s.status ? `<span class="st">${esc(s.status)}</span>` : ""}` +
+        `${label ? `<span class="st" style="margin:0 6px 0 0">${label}</span>` : ""}${esc(s.title)}${jira && s.status ? `<span class="st">${esc(s.status)}</span>` : ""}` +
         `${when ? `<small>${stale ? "⚠ " : ""}${esc(when)}</small>` : ""}</a></li>`;
     }).join("") + "</ul>";
     wrap.appendChild(div);
@@ -407,7 +423,7 @@
   function addActions(wrap, question, done) {
     const row = document.createElement("div");
     row.className = "actions";
-    if (done.not_documented && cfg.docs_requests_enabled) {
+    if (done.not_documented && cfg.docs_requests_enabled && done.mode !== "feedback") {
       const btn = document.createElement("button");
       btn.type = "button"; btn.className = "btn"; btn.textContent = "Request docs for this";
       btn.onclick = async () => {
@@ -533,14 +549,14 @@
       area.querySelector(".examples-label").hidden = !box.children.length;
     } catch (e) {}
   }
-  const VIEWS = { cs: ["chatView", "navCS"], product: ["chatView", "navProduct"],
+  const VIEWS = { cs: ["chatView", "navCS"], product: ["chatView", "navProduct"], feedback: ["chatView", "navFeedback"],
                   docs: ["docsView", "navDocs", "Request a doc"], usage: ["usageView", "navUsage", "Usage"] };
   function setMode(m) {
     mode = m;
     for (const k of Object.keys(MODES)) $(`messages-${k}`).hidden = k !== m;
     messages = $(`messages-${m}`);
     input.placeholder = MODES[m].placeholder;
-    document.querySelectorAll("#topModes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+    $("topModes").value = m;
     try { localStorage.setItem("kbMode", m); } catch (e) {}
     if (!messages.querySelector(".msg")) loadSuggestions();
   }
@@ -548,7 +564,7 @@
     const chat = view in MODES;
     $("chatView").hidden = !chat; $("docsView").hidden = view !== "docs"; $("usageView").hidden = view !== "usage";
     for (const [k, [, nav]] of Object.entries(VIEWS)) $(nav).classList.toggle("active", k === view);
-    $("crumb").textContent = $("pageTitle").textContent = chat ? `${MODES[view].title} questions` : VIEWS[view][2];
+    $("crumb").textContent = $("pageTitle").textContent = chat ? (view === "feedback" ? "User feedback" : `${MODES[view].title} questions`) : VIEWS[view][2];
     document.querySelectorAll(".newChat").forEach((b) => { b.hidden = !chat; });
     $("topModes").hidden = !chat;
     $("topDocs").textContent = chat ? "Request doc" : "Back";
@@ -561,7 +577,7 @@
   const nf = (n) => (n === null || n === undefined) ? "–" : n.toLocaleString();
   const ERR_NAMES = { claude_limit: "Claude usage limit reached", claude_rate_limit: "Claude rate limit", claude_down: "Claude busy",
     claude_auth: "Claude key rejected", confluence_login: "Confluence login failed", confluence_rate_limit: "Confluence rate limit",
-    confluence_down: "Confluence unreachable", rate_limited: "People hitting the 20-question limit", unknown: "Other errors" };
+    confluence_down: "Confluence unreachable", notion_login: "Notion login failed", rate_limited: "People hitting the 20-question limit", unknown: "Other errors" };
 
   const usd = (n) => n == null ? "–" : `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString()}`;
   const tile = (label, value, sub, cls = "", meterPct = null) =>
@@ -685,7 +701,8 @@
 
   $("navCS").addEventListener("click", (e) => { e.preventDefault(); showView("cs"); });
   $("navProduct").addEventListener("click", (e) => { e.preventDefault(); showView("product"); });
-  document.querySelectorAll("#topModes button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.mode)));
+  $("navFeedback").addEventListener("click", (e) => { e.preventDefault(); showView("feedback"); });
+  $("topModes").addEventListener("change", (e) => showView(e.target.value));
   $("navDocs").addEventListener("click", (e) => { e.preventDefault(); showView("docs"); });
   $("navUsage").addEventListener("click", (e) => { e.preventDefault(); showView("usage"); });
   $("usageRefresh").addEventListener("click", () => loadUsage());

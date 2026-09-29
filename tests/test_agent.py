@@ -148,8 +148,8 @@ def test_cs_mode_has_no_jira(fake_confluence, monkeypatch):
 
 def test_product_mode_reads_jira(fake_confluence, monkeypatch):
     from app import jira
-    monkeypatch.setattr(jira, "search", lambda q, limit=8: [{"key": "LP-7", "summary": "Autopay", "status": "Done"}])
-    monkeypatch.setattr(jira, "get_issue", lambda k: {
+    monkeypatch.setattr(jira, "search", lambda q, limit=8, **kw: [{"key": "LP-7", "summary": "Autopay", "status": "Done"}])
+    monkeypatch.setattr(jira, "get_issue", lambda k, **kw: {
         "key": "LP-7", "summary": "Autopay", "type": "Story", "status": "Done", "resolution": "Done",
         "fix_versions": ["2.4"], "parent": "LP-846 Payments", "priority": "High", "labels": [], "assignee": "",
         "last_updated": "2026-09-20", "url": "https://x/browse/LP-7", "text": "Shipped in 2.4"})

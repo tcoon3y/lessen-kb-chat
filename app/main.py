@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hmac
+from contextlib import asynccontextmanager
 import json
 import logging
 from pathlib import Path
@@ -12,13 +13,19 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app import agent, config, docs_requests, errors, jira, suggestions, usage
+from app import agent, config, docs_requests, errors, jira, notion, suggestions, usage
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 log = logging.getLogger("kbchat")
-app = FastAPI(title="Lessen Pro KB Chat", docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(_app):
+    notion.start_background()  # crawl the research pages once so the first question is fast
+    yield
+
+
+app = FastAPI(title="Lessen Pro KB Chat", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 class Turn(BaseModel):
@@ -28,7 +35,7 @@ class Turn(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    mode: Literal["cs", "product"] = "cs"
+    mode: Literal["cs", "product", "feedback"] = "cs"
     history: list[Turn] = Field(default_factory=list, max_length=40)
 
 
@@ -74,6 +81,7 @@ def ui_config() -> dict:
         "passcode_required": config.get("AUTH_MODE", "passcode").lower() == "passcode",
         "docs_requests_enabled": bool(config.get("DOCS_REQUEST_PAGE_ID").strip()),
         "jira_projects": config.get("JIRA_PROJECTS", "LP"),
+        "notion_enabled": notion.enabled(),
         "docs_requests_url": (f"{config.get('CONFLUENCE_BASE_URL').rstrip('/')}/pages/viewpage.action?pageId="
                               f"{config.get('DOCS_REQUEST_PAGE_ID').strip()}"
                               if config.get("DOCS_REQUEST_PAGE_ID").strip() else ""),
@@ -81,7 +89,7 @@ def ui_config() -> dict:
 
 
 @app.get("/api/suggestions")
-def get_suggestions(mode: Literal["cs", "product"] = "cs", x_passcode: str | None = Header(default=None)) -> dict:
+def get_suggestions(mode: Literal["cs", "product", "feedback"] = "cs", x_passcode: str | None = Header(default=None)) -> dict:
     check_passcode(x_passcode)
     return {"questions": suggestions.top(mode)}
 

@@ -1,6 +1,6 @@
 # Lessen Pro Knowledge Bot
 
-A private web chat that answers Lessen Pro questions from Confluence. It has two chats: **Customer success** (Confluence only) and **Product** (Confluence plus read-only Jira search in project LP). Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. Chat history lives only in the browser tab. It runs on Railway behind a shared passcode.
+A private web chat that answers Lessen Pro questions from Confluence. It has three chats: **Customer success** (Confluence only), **Product** (Confluence plus read-only Jira search in project LP) and **User feedback** (Notion user research, the CS feedback sheet, and Jira LP + LPH). Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. Chat history lives only in the browser tab. It runs on Railway behind a shared passcode.
 
 ## Runbook
 
@@ -13,6 +13,12 @@ All settings live in Railway: open the project → the service → **Variables**
 
 ### Change which Jira projects the Product chat reads
 Edit `JIRA_PROJECTS` (default `LP`), e.g. `LP,LPH`. Tickets in other projects are treated as not found. Jira uses the same Atlassian email and token as Confluence. Test locally with `uv run python -m app.jira "autopay"`.
+
+### User feedback chat
+- **Notion:** create an internal integration at notion.so/profile/integrations (read content only), copy its secret into `NOTION_TOKEN`, then in Notion open **User Research** → ••• → **Connections** → add the integration. Only that page and its sub-pages are read (`NOTION_ROOT_PAGE_ID`). The bot re-reads them every 30 minutes. Test locally with `uv run python -m app.notion "scheduling"`.
+- **Feedback sheet:** a daily scheduled Claude task (6:52am Central) copies `Lessen Pro Feedback.xlsx` into the Confluence page `FEEDBACK_PAGE_ID` ("Lessen Pro Feedback (synced from Excel)" in TCN). Edit the Excel file, not that page. The CS and Product chats don't search it.
+- **Jira:** this chat searches `JIRA_PROJECTS_FEEDBACK` (default `LP,LPH`).
+- Edit its instructions in `app/prompts/feedback.md`.
 
 ### Rotate keys
 - **Anthropic:** console.anthropic.com → API Keys → create a key → paste into `ANTHROPIC_API_KEY` → delete the old key.
@@ -51,8 +57,12 @@ Railway → service → **Deployments** → Active → **View logs**. One line p
 | `AUTH_MODE` | `passcode` or `cloudflare` |
 | `APP_PASSCODE` | Team passcode (secret) |
 | `DOCS_REQUEST_PAGE_ID` | Page ID of the Documentation Requests table |
-| `SUGGESTED_QUESTIONS`, `SUGGESTED_QUESTIONS_PRODUCT` | Optional starter questions per chat, separated by `|` |
+| `SUGGESTED_QUESTIONS`, `SUGGESTED_QUESTIONS_PRODUCT`, `SUGGESTED_QUESTIONS_FEEDBACK` | Optional starter questions per chat, separated by `|` |
 | `JIRA_PROJECTS` | Jira projects the Product chat may search, default `LP` |
+| `NOTION_TOKEN` | Notion integration secret for the User feedback chat (secret) |
+| `NOTION_ROOT_PAGE_ID` | Notion page tree to read, default User Research |
+| `FEEDBACK_PAGE_ID` | Confluence page holding the synced feedback sheet |
+| `JIRA_PROJECTS_FEEDBACK` | Jira projects the User feedback chat may search, default `LP,LPH` |
 | `PRICE_INPUT_PER_MTOK`, `PRICE_OUTPUT_PER_MTOK` | Optional cost-estimate prices |
 | `ANTHROPIC_MONTHLY_BUDGET` | Optional monthly Claude budget (USD) for the Usage page |
 
