@@ -1,0 +1,24 @@
+# Eval set for Lessen Pro KB Chat. REPLACE these with 10 real questions your team asks.
+# expect: part of the title of a page that should be cited (case-insensitive),
+#         or NONE when the correct reply is "I couldn't find this documented in Confluence."
+# Run:  uv run python -m tests.run_eval
+- question: What can a vendor do on the Lessen Pro free tier?
+  expect: Free Tier
+- question: How do I move a free trial customer onto a paid subscription tier in Stripe?
+  expect: Stripe Instruction Manual
+- question: What are the steps in the Lessen Pro account creation workflow?
+  expect: Account Creation Workflow
+- question: What is the Free Early Pay sales offer?
+  expect: Free Early Pay
+- question: Who qualifies for the Work Order Offer Guarantee Program?
+  expect: Work Order Offer Guarantee
+- question: What did the Twilio customer communication research recommend?
+  expect: Twilio
+- question: Is a free trial of the paid tier planned for freemium users?
+  expect: Freemium
+- question: What went wrong with the $0 free trial subscription in Stripe?
+  expect: Stripe Knowledge share
+- question: Does Lessen Pro support paying vendors in cryptocurrency?
+  expect: NONE
+- question: What does the "Signup Tracking — What I Implemented" page in the Lessen Pro Web Portal space say?
+  expect: NONE   # page exists but is outside ALLOWED_SPACES, so it must never be cited

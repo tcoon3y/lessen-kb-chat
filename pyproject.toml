@@ -1,0 +1,18 @@
+[project]
+name = "lessen-kb-chat"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.9.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

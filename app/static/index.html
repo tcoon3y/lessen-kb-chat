@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lessen Pro KB Chat</title>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f5f6f8; --text: #1b1f24; --muted: #5f6b7a;
+    --border: #dfe3e8; --accent: #1f5fd6; --accent-text: #ffffff; --user: #e8effc; --error: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181c; --surface: #1f2329; --text: #e7eaee; --muted: #9aa5b1;
+            --border: #333a43; --accent: #6b9cff; --accent-text: #0e1116; --user: #22324f; --error: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .app { max-width: 760px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; padding: 0 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  .link-btn { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 4px 0; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px 0; }
+  .empty { color: var(--muted); text-align: center; margin-top: 18vh; }
+  .msg { margin: 0 0 16px; }
+  .msg.user .bubble { background: var(--user); margin-left: auto; max-width: 85%; width: fit-content; }
+  .bubble { padding: 10px 14px; border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+  .bubble p { margin: 0 0 8px; } .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px; }
+  .bubble h3 { font-size: 15px; margin: 8px 0 4px; }
+  .bubble code { background: var(--border); padding: 0 4px; border-radius: 4px; }
+  .status { color: var(--muted); font-style: italic; }
+  .error { color: var(--error); }
+  .sources { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
+  .sources a { color: var(--accent); text-decoration: none; }
+  .sources a:hover { text-decoration: underline; }
+  .sources li { margin: 2px 0; }
+  .sources ul { margin: 2px 0 0; padding-left: 18px; }
+  .req { margin: 8px 2px 0; font-size: 13px; }
+  .req button { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  .req button:disabled { opacity: .6; cursor: default; }
+  form.composer { display: flex; gap: 8px; padding: 12px 0 16px; border-top: 1px solid var(--border); }
+  textarea, input[type=password] { flex: 1; resize: none; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .primary { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px; padding: 0 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  .primary:disabled { opacity: .5; cursor: default; }
+  #login { margin-top: 20vh; }
+  #login p { color: var(--muted); }
+  #login form { display: flex; gap: 8px; }
+  #login .primary { padding: 10px 18px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Lessen Pro KB Chat</h1>
+    <button class="link-btn" id="newChat" type="button">New chat</button>
+  </header>
+
+  <section id="login" hidden>
+    <p>Enter the team passcode to start.</p>
+    <form id="loginForm">
+      <input type="password" id="passcode" placeholder="Passcode" autocomplete="current-password" required>
+      <button class="primary" type="submit">Enter</button>
+    </form>
+    <p class="error" id="loginError" hidden>That passcode didn't work.</p>
+  </section>
+
+  <main id="messages" hidden>
+    <p class="empty" id="empty">Ask a question about Lessen Pro. Answers come from Confluence, with links to the pages used.</p>
+  </main>
+
+  <form class="composer" id="composer" hidden>
+    <textarea id="input" rows="1" placeholder="Ask about Lessen Pro…" maxlength="2000" required></textarea>
+    <button class="primary" id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const messages = $("messages"), input = $("input"), send = $("send");
+  let history = [];            // lives in this tab only
+  let passcode = "";
+  let busy = false;
+  let cfg = { passcode_required: true, docs_requests_enabled: false };
+
+  try { passcode = sessionStorage.getItem("kbPasscode") || ""; } catch (e) {}
+
+  function headers() {
+    const h = { "Content-Type": "application/json" };
+    if (passcode) h["X-Passcode"] = passcode;
+    return h;
+  }
+
+  function showChat() {
+    $("login").hidden = true; messages.hidden = false; $("composer").hidden = false; input.focus();
+  }
+  function showLogin(failed) {
+    passcode = ""; try { sessionStorage.removeItem("kbPasscode"); } catch (e) {}
+    $("login").hidden = false; messages.hidden = true; $("composer").hidden = true;
+    $("loginError").hidden = !failed; $("passcode").value = ""; $("passcode").focus();
+  }
+
+  // --- tiny, safe markdown: escape first, then a few inline/block rules ---
+  function esc(s) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function inline(s) {
+    return esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  }
+  function render(md) {
+    const out = []; let list = null;
+    const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+    for (const raw of md.split("\n")) {
+      const line = raw.trimEnd();
+      let m;
+      if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { if (list !== "ul") { close(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== "ol") { close(); out.push("<ol>"); list = "ol"; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if ((m = line.match(/^#{1,6}\s+(.*)/))) { close(); out.push(`<h3>${inline(m[1])}</h3>`); }
+      else if (line.trim() === "") { close(); }
+      else { close(); out.push(`<p>${inline(line)}</p>`); }
+    }
+    close();
+    return out.join("");
+  }
+
+  function addMessage(role) {
+    $("empty").hidden = true;
+    const wrap = document.createElement("div");
+    wrap.className = `msg ${role}`;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return { wrap, bubble };
+  }
+
+  function addSources(wrap, sources) {
+    if (!sources || !sources.length) return;
+    const div = document.createElement("div");
+    div.className = "sources";
+    div.innerHTML = "Sources:<ul>" + sources.map((s) =>
+      `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join("") + "</ul>";
+    wrap.appendChild(div);
+  }
+
+  function addRequestButton(wrap, question) {
+    if (!cfg.docs_requests_enabled) return;
+    const div = document.createElement("div");
+    div.className = "req";
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.textContent = "Request docs for this";
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        const r = await fetch("/api/request-docs", { method: "POST", headers: headers(), body: JSON.stringify({ question }) });
+        if (r.status === 401) return showLogin(true);
+        btn.textContent = r.ok ? "Requested ✓ Added to the Documentation Requests page" : "Couldn't send. Try again";
+        if (!r.ok) btn.disabled = false;
+      } catch (e) { btn.textContent = "Couldn't send. Try again"; btn.disabled = false; }
+    };
+    div.appendChild(btn);
+    wrap.appendChild(div);
+  }
+
+  async function ask(question) {
+    busy = true; send.disabled = true;
+    const u = addMessage("user"); u.bubble.textContent = question;
+    const a = addMessage("assistant");
+    a.bubble.innerHTML = '<span class="status">Thinking…</span>';
+    let text = "", done = null, failed = false;
+
+    try {
+      const r = await fetch("/api/chat", { method: "POST", headers: headers(), body: JSON.stringify({ question, history }) });
+      if (r.status === 401) { a.wrap.remove(); u.wrap.remove(); busy = false; send.disabled = false; return showLogin(true); }
+      if (!r.ok || !r.body) throw new Error("bad response");
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+      while (true) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) !== -1) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          if (!chunk.startsWith("data: ")) continue;
+          const ev = JSON.parse(chunk.slice(6));
+          if (ev.type === "text") { text += ev.text; a.bubble.innerHTML = render(text); }
+          else if (ev.type === "reset") { text = ""; }
+          else if (ev.type === "status") { if (!text) a.bubble.innerHTML = `<span class="status">${esc(ev.text)}</span>`; }
+          else if (ev.type === "done") { done = ev; }
+          else if (ev.type === "error") { failed = true; a.bubble.innerHTML = `<span class="error">${esc(ev.text)}</span>`; }
+          messages.scrollTop = messages.scrollHeight;
+        }
+      }
+    } catch (e) { failed = true; }
+
+    if (done && !failed) {
+      a.bubble.innerHTML = render(done.text);
+      addSources(a.wrap, done.sources);
+      if (done.not_documented) addRequestButton(a.wrap, question);
+      history.push({ role: "user", content: question }, { role: "assistant", content: done.text });
+    } else if (!failed || !a.bubble.querySelector(".error")) {
+      a.bubble.innerHTML = '<span class="error">Sorry, something went wrong. Please try again.</span>';
+    }
+    messages.scrollTop = messages.scrollHeight;
+    busy = false; send.disabled = false; input.focus();
+  }
+
+  $("composer").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || busy) return;
+    input.value = ""; input.style.height = "";
+    ask(q);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("composer").requestSubmit(); }
+  });
+  input.addEventListener("input", () => { input.style.height = ""; input.style.height = Math.min(input.scrollHeight, 160) + "px"; });
+
+  $("newChat").addEventListener("click", () => {
+    if (busy) return;
+    history = [];
+    messages.querySelectorAll(".msg").forEach((n) => n.remove());
+    $("empty").hidden = false; input.value = ""; input.focus();
+  });
+
+  $("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    passcode = $("passcode").value;
+    try {
+      const r = await fetch("/api/login", { method: "POST", headers: headers() });
+      if (!r.ok) return showLogin(true);
+      try { sessionStorage.setItem("kbPasscode", passcode); } catch (e2) {}
+      showChat();
+    } catch (err) { showLogin(true); }
+  });
+
+  fetch("/api/config").then((r) => r.json()).then((c) => {
+    cfg = c;
+    if (!cfg.passcode_required || passcode) showChat(); else showLogin(false);
+  }).catch(() => showLogin(false));
+})();
+</script>
+</body>
+</html>
