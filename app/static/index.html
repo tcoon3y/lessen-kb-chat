@@ -33,6 +33,11 @@
   .nav a:hover { background: #eef2f6; text-decoration: none; }
   .nav a.active { background: var(--active); color: var(--text); font-weight: 500; }
   .nav svg { width: 16px; height: 16px; flex: none; }
+  .tag { margin-left: auto; font-size: 10px; font-weight: 600; color: #1f4fd1; background: var(--brand-pill); border-radius: 999px; padding: 1px 6px; }
+  .modes { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .modes button { border: 0; background: var(--card); padding: 5px 10px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .modes button.on { background: var(--active); color: var(--text); font-weight: 600; }
+  .sources li a .st { color: var(--text); background: var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-size: 11px; }
   .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding: 12px 4px 0; font-size: 12px; color: var(--muted); }
   .side-foot b { display: block; color: var(--text); font-weight: 600; font-size: 13px; }
 
@@ -51,7 +56,7 @@
 
   .card { flex: 1; min-height: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
     display: flex; flex-direction: column; }
-  #messages { flex: 1; overflow-y: auto; padding: 20px 20px 8px; }
+  .messages { flex: 1; overflow-y: auto; padding: 20px 20px 8px; }
   .empty { max-width: 460px; margin: 12vh auto 0; text-align: center; color: var(--muted); }
   .empty h2 { color: var(--text); font-size: 16px; font-weight: 600; margin: 0 0 6px; }
   .examples-label { margin-top: 20px; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
@@ -108,7 +113,8 @@
   .form-actions .primary { padding: 9px 18px; }
   .form-actions a { font-size: 13px; }
   .docdone strong { font-size: 16px; }
-  .topbar-actions { display: flex; gap: 8px; }
+  .topbar-actions { display: flex; gap: 6px; align-items: center; }
+  .topbar-actions .btn { white-space: nowrap; padding: 5px 9px; }
 
   /* Usage */
   .usage { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
@@ -155,7 +161,7 @@
     .crumbs, .titlebar { display: none; }
     .card { border: 0; border-radius: 0; }
     .docform, .docdone { padding: 16px; }
-    #messages { padding: 16px 16px 8px; }
+    .messages { padding: 16px 16px 8px; }
     .msg.user .bubble { max-width: 88%; }
     form.composer { padding: 10px 16px 14px; }
   }
@@ -166,11 +172,17 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="logo"><img src="data:image/png;base64,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" width="80" height="36" alt="Lessen Pro"></div>
-    <div class="section">Knowledge</div>
+    <div class="section">Ask a question</div>
     <nav class="nav">
-      <a href="#" class="active" id="navAsk">
+      <a href="#" class="active" id="navCS">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H6.2L3.3 13.6A.5.5 0 0 1 2.5 13.2V11A1.5 1.5 0 0 1 2 9.5z"/></svg>
-        Ask a question</a>
+        Customer success</a>
+      <a href="#" id="navProduct">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 3A1.5 1.5 0 0 1 4 1.5h8A1.5 1.5 0 0 1 13.5 3v10a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 13zm3 2a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h3a.75.75 0 0 0 0-1.5z"/></svg>
+        Product <span class="tag">+ Jira</span></a>
+    </nav>
+    <div class="section" style="margin-top:14px">Docs &amp; usage</div>
+    <nav class="nav">
       <a href="#" id="navDocs" hidden>
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 1.5h5.3L13 5.2V13.5A1.5 1.5 0 0 1 11.5 15h-7A1.5 1.5 0 0 1 3 13.5v-10A1.5 1.5 0 0 1 4.5 2zM9 2.5V5.5h3"/></svg>
         Request a doc</a>
@@ -178,15 +190,16 @@
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 13.5h11a.75.75 0 0 1 0 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11a.75.75 0 0 1 1.5 0zM5 8.25a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0zm3-3a.75.75 0 0 1 1.5 0v6.5a.75.75 0 0 1-1.5 0zm3 1.5a.75.75 0 0 1 1.5 0v5a.75.75 0 0 1-1.5 0z"/></svg>
         Usage</a>
     </nav>
-    <div class="side-foot"><b>Answers from Confluence</b>Lessen Pro knowledge base</div>
+    <div class="side-foot"><b>Answers from Confluence</b>Product chat also searches Jira</div>
   </aside>
 
   <div class="main">
     <div class="topbar">
       <div class="logo"><img src="data:image/png;base64,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" width="80" height="36" alt="Lessen Pro"></div>
       <div class="topbar-actions">
-        <button class="btn" type="button" id="topDocs" hidden>Request a doc</button>
-        <button class="btn newChat" type="button">New chat</button>
+        <div class="modes" id="topModes"><button type="button" data-mode="cs" class="on">CS</button><button type="button" data-mode="product">Product</button></div>
+        <button class="btn" type="button" id="topDocs" hidden>Request doc</button>
+        <button class="btn newChat" type="button" aria-label="New chat" title="New chat">+ New</button>
       </div>
     </div>
     <div class="crumbs">Lessen Pro / <span id="crumb">Knowledge Bot</span></div>
@@ -198,12 +211,20 @@
     </div>
 
     <div class="card" id="chatView">
-      <main id="messages">
-        <div class="empty" id="empty">
-          <h2>Ask about Lessen Pro</h2>
+      <main class="messages" id="messages-cs">
+        <div class="empty">
+          <h2>Ask a customer success question</h2>
           Answers come from Confluence, with links to the pages used.
-          <div class="examples-label" id="exLabel" hidden>Popular questions</div>
-          <div class="examples" id="examples"></div>
+          <div class="examples-label" hidden>Popular questions</div>
+          <div class="examples"></div>
+        </div>
+      </main>
+      <main class="messages" id="messages-product" hidden>
+        <div class="empty">
+          <h2>Ask a product question</h2>
+          Answers come from Confluence and Jira (LP), with links to the pages and tickets used.
+          <div class="examples-label" hidden>Popular questions</div>
+          <div class="examples"></div>
         </div>
       </main>
       <form class="composer" id="composer">
@@ -245,7 +266,7 @@
         </div>
       </section>
       <section class="usec">
-        <h2>Confluence</h2>
+        <h2>Confluence &amp; Jira</h2>
         <div class="tiles" id="tilesConf"></div>
       </section>
       <section class="usec" id="docSec">
@@ -277,8 +298,13 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const messages = $("messages"), input = $("input"), send = $("send");
-  let history = [];            // lives in this tab only
+  const input = $("input"), send = $("send");
+  const MODES = {
+    cs: { title: "Customer success", placeholder: "Ask a question about Lessen Pro…", history: [] },
+    product: { title: "Product", placeholder: "Ask about features, tickets or status…", history: [] },
+  };
+  let mode = "cs";
+  let messages = $("messages-cs");   // history for each chat lives in this tab only
   let passcode = "";
   let busy = false;
   let cfg = { passcode_required: true, docs_requests_enabled: false };
@@ -291,7 +317,11 @@
     return h;
   }
 
-  function showChat() { $("login").hidden = true; loadSuggestions(); input.focus(); }
+  function showChat() {
+    $("login").hidden = true;
+    let m = "cs"; try { m = localStorage.getItem("kbMode") || "cs"; } catch (e) {}
+    showView(m in MODES ? m : "cs");
+  }
   function showLogin(failed) {
     passcode = ""; try { sessionStorage.removeItem("kbPasscode"); } catch (e) {}
     $("login").hidden = false;
@@ -322,15 +352,15 @@
     return out.join("");
   }
 
-  function addMessage(role) {
-    $("empty").hidden = true;
+  function addMessage(role, box = messages) {
+    box.querySelector(".empty").hidden = true;
     const wrap = document.createElement("div");
     wrap.className = `msg ${role}`;
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     wrap.appendChild(bubble);
-    messages.appendChild(wrap);
-    messages.scrollTop = messages.scrollHeight;
+    box.appendChild(wrap);
+    box.scrollTop = box.scrollHeight;
     return { wrap, bubble };
   }
 
@@ -344,10 +374,12 @@
     div.className = "sources";
     const yearAgo = Date.now() - 365 * 864e5;
     div.innerHTML = "Sources<ul>" + sources.map((s) => {
-      const t = Date.parse(s.last_updated || ""), stale = t && t < yearAgo, when = fmtDate(s.last_updated);
+      const jira = s.kind === "jira";
+      const t = Date.parse(s.last_updated || ""), stale = !jira && t && t < yearAgo, when = fmtDate(s.last_updated);
       const tip = when ? (stale ? `Last updated ${when}. This page may be out of date.` : `Last updated ${when}`) : "";
       return `<li><a class="${stale ? "stale" : ""}" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(tip)}">` +
-        `${esc(s.title)}${when ? `<small>${stale ? "⚠ " : ""}${esc(when)}</small>` : ""}</a></li>`;
+        `${esc(s.title)}${jira && s.status ? `<span class="st">${esc(s.status)}</span>` : ""}` +
+        `${when ? `<small>${stale ? "⚠ " : ""}${esc(when)}</small>` : ""}</a></li>`;
     }).join("") + "</ul>";
     wrap.appendChild(div);
   }
@@ -428,13 +460,14 @@
 
   async function ask(question) {
     busy = true; send.disabled = true;
-    const u = addMessage("user"); u.bubble.textContent = question;
-    const a = addMessage("assistant");
+    const askMode = mode, box = messages, history = MODES[askMode].history;
+    const u = addMessage("user", box); u.bubble.textContent = question;
+    const a = addMessage("assistant", box);
     a.bubble.innerHTML = '<span class="status">Thinking…</span>';
     let text = "", done = null, failed = false;
 
     try {
-      const r = await fetch("/api/chat", { method: "POST", headers: headers(), body: JSON.stringify({ question, history }) });
+      const r = await fetch("/api/chat", { method: "POST", headers: headers(), body: JSON.stringify({ question, history, mode: askMode }) });
       if (r.status === 401) { a.wrap.remove(); u.wrap.remove(); busy = false; send.disabled = false; return showLogin(true); }
       if (!r.ok || !r.body) throw new Error("bad response");
       const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
@@ -452,7 +485,7 @@
           else if (ev.type === "status") { if (!text) a.bubble.innerHTML = `<span class="status">${esc(ev.text)}</span>`; }
           else if (ev.type === "done") { done = ev; }
           else if (ev.type === "error") { failed = true; showError(a, ev.title, ev.text); }
-          messages.scrollTop = messages.scrollHeight;
+          box.scrollTop = box.scrollHeight;
         }
       }
     } catch (e) { failed = true; showError(a, "Connection lost", "Couldn't reach the bot. Check your connection and try again."); }
@@ -465,7 +498,7 @@
     } else if (!failed) {
       showError(a, "Connection lost", "The answer didn't finish loading. Check your connection and try again.");
     }
-    messages.scrollTop = messages.scrollHeight;
+    box.scrollTop = box.scrollHeight;
     busy = false; send.disabled = false; input.focus();
   }
 
@@ -482,32 +515,43 @@
   input.addEventListener("input", () => { input.style.height = ""; input.style.height = Math.min(input.scrollHeight, 160) + "px"; });
 
   async function loadSuggestions() {
+    const m = mode, area = messages;
     try {
-      const r = await fetch("/api/suggestions", { headers: headers() });
+      const r = await fetch(`/api/suggestions?mode=${m}`, { headers: headers() });
       if (!r.ok) return;
       const { questions } = await r.json();
-      const box = $("examples"); box.innerHTML = "";
+      const box = area.querySelector(".examples"); box.innerHTML = "";
       for (const q of questions || []) {
         const b = document.createElement("button");
         b.type = "button"; b.textContent = q;
-        b.onclick = () => { if (!busy) ask(q); };
+        b.onclick = () => { if (!busy && mode === m) ask(q); };
         box.appendChild(b);
       }
-      $("exLabel").hidden = !box.children.length;
+      area.querySelector(".examples-label").hidden = !box.children.length;
     } catch (e) {}
   }
-  const VIEWS = { chat: ["chatView", "navAsk", "Knowledge Bot"], docs: ["docsView", "navDocs", "Request a doc"],
-                  usage: ["usageView", "navUsage", "Usage"] };
+  const VIEWS = { cs: ["chatView", "navCS"], product: ["chatView", "navProduct"],
+                  docs: ["docsView", "navDocs", "Request a doc"], usage: ["usageView", "navUsage", "Usage"] };
+  function setMode(m) {
+    mode = m;
+    for (const k of Object.keys(MODES)) $(`messages-${k}`).hidden = k !== m;
+    messages = $(`messages-${m}`);
+    input.placeholder = MODES[m].placeholder;
+    document.querySelectorAll("#topModes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+    try { localStorage.setItem("kbMode", m); } catch (e) {}
+    if (!messages.querySelector(".msg")) loadSuggestions();
+  }
   function showView(view) {
-    for (const [k, [el, nav]] of Object.entries(VIEWS)) {
-      $(el).hidden = k !== view; $(nav).classList.toggle("active", k === view);
-    }
-    $("crumb").textContent = $("pageTitle").textContent = VIEWS[view][2];
-    document.querySelectorAll(".newChat").forEach((b) => { b.hidden = view !== "chat"; });
-    $("topDocs").textContent = view === "chat" ? "Request a doc" : "Back to chat";
-    if (view === "docs") { $("docForm").hidden = false; $("docDone").hidden = true; $("docSubject").focus(); }
+    const chat = view in MODES;
+    $("chatView").hidden = !chat; $("docsView").hidden = view !== "docs"; $("usageView").hidden = view !== "usage";
+    for (const [k, [, nav]] of Object.entries(VIEWS)) $(nav).classList.toggle("active", k === view);
+    $("crumb").textContent = $("pageTitle").textContent = chat ? `${MODES[view].title} questions` : VIEWS[view][2];
+    document.querySelectorAll(".newChat").forEach((b) => { b.hidden = !chat; });
+    $("topModes").hidden = !chat;
+    $("topDocs").textContent = chat ? "Request doc" : "Back";
+    if (chat) { setMode(view); input.focus(); }
+    else if (view === "docs") { $("docForm").hidden = false; $("docDone").hidden = true; $("docSubject").focus(); }
     else if (view === "usage") loadUsage();
-    else input.focus();
   }
 
   const nf = (n) => (n === null || n === undefined) ? "–" : n.toLocaleString();
@@ -604,10 +648,12 @@
     });
   }
 
-  $("navAsk").addEventListener("click", (e) => { e.preventDefault(); showView("chat"); });
+  $("navCS").addEventListener("click", (e) => { e.preventDefault(); showView("cs"); });
+  $("navProduct").addEventListener("click", (e) => { e.preventDefault(); showView("product"); });
+  document.querySelectorAll("#topModes button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.mode)));
   $("navDocs").addEventListener("click", (e) => { e.preventDefault(); showView("docs"); });
   $("navUsage").addEventListener("click", (e) => { e.preventDefault(); showView("usage"); });
-  $("topDocs").addEventListener("click", () => showView($("chatView").hidden ? "chat" : "docs"));
+  $("topDocs").addEventListener("click", () => showView($("chatView").hidden ? mode : "docs"));
   $("docAnother").addEventListener("click", () => { $("docForm").reset(); $("docForm").hidden = false; $("docDone").hidden = true; $("docSubject").focus(); });
   $("docForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -626,10 +672,10 @@
 
   document.querySelectorAll(".newChat").forEach((btn) => btn.addEventListener("click", () => {
     if (busy) return;
-    showView("chat");
-    history = [];
+    showView(mode);
+    MODES[mode].history.length = 0;
     messages.querySelectorAll(".msg").forEach((n) => n.remove());
-    $("empty").hidden = false; input.value = ""; loadSuggestions(); input.focus();
+    messages.querySelector(".empty").hidden = false; input.value = ""; loadSuggestions(); input.focus();
   }));
 
   $("loginForm").addEventListener("submit", async (e) => {

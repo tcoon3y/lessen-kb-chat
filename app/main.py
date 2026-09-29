@@ -8,9 +8,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
-from app import agent, config, docs_requests, errors, suggestions, usage
+from app import agent, config, docs_requests, errors, jira, suggestions, usage
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -26,6 +28,7 @@ class Turn(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    mode: Literal["cs", "product"] = "cs"
     history: list[Turn] = Field(default_factory=list, max_length=40)
 
 
@@ -70,6 +73,7 @@ def ui_config() -> dict:
     return {
         "passcode_required": config.get("AUTH_MODE", "passcode").lower() == "passcode",
         "docs_requests_enabled": bool(config.get("DOCS_REQUEST_PAGE_ID").strip()),
+        "jira_projects": config.get("JIRA_PROJECTS", "LP"),
         "docs_requests_url": (f"{config.get('CONFLUENCE_BASE_URL').rstrip('/')}/pages/viewpage.action?pageId="
                               f"{config.get('DOCS_REQUEST_PAGE_ID').strip()}"
                               if config.get("DOCS_REQUEST_PAGE_ID").strip() else ""),
@@ -77,9 +81,9 @@ def ui_config() -> dict:
 
 
 @app.get("/api/suggestions")
-def get_suggestions(x_passcode: str | None = Header(default=None)) -> dict:
+def get_suggestions(mode: Literal["cs", "product"] = "cs", x_passcode: str | None = Header(default=None)) -> dict:
     check_passcode(x_passcode)
-    return {"questions": suggestions.top()}
+    return {"questions": suggestions.top(mode)}
 
 
 @app.get("/api/usage")
@@ -126,15 +130,15 @@ def chat(req: ChatRequest, request: Request, x_passcode: str | None = Header(def
 
     def events():
         try:
-            for event in agent.stream_answer(req.question, history, check_login=True):
+            for event in agent.stream_answer(req.question, history, check_login=True, mode=req.mode):
                 if event["type"] == "done":
                     nd = bool(event.get("not_documented"))
                     if event.get("sources") and not nd:
-                        suggestions.record(req.question)
+                        suggestions.record(req.question, req.mode)
                     meta = event.get("meta", {})
                     usage.record_answer(meta, nd)
                     # One line per request: numbers only, never question or answer text.
-                    log.info(json.dumps({"event": "chat", "outcome": "not_documented" if nd else "answered",
+                    log.info(json.dumps({"event": "chat", "mode": req.mode, "outcome": "not_documented" if nd else "answered",
                                          "latency_ms": meta.get("latency_ms"), "tool_calls": meta.get("tool_calls"),
                                          "tokens": meta.get("tokens"), "sources": len(event.get("sources") or []),
                                          "history_turns": len(history)}))

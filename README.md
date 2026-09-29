@@ -1,6 +1,6 @@
 # Lessen Pro Knowledge Bot
 
-A private web chat that answers Lessen Pro questions from Confluence. Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. Chat history lives only in the browser tab. It runs on Railway behind a shared passcode.
+A private web chat that answers Lessen Pro questions from Confluence. It has two chats: **Customer success** (Confluence only) and **Product** (Confluence plus read-only Jira search in project LP). Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. Chat history lives only in the browser tab. It runs on Railway behind a shared passcode.
 
 ## Runbook
 
@@ -11,16 +11,19 @@ All settings live in Railway: open the project → the service → **Variables**
 2. Edit `ALLOWED_SPACES` to a comma-separated list of keys, e.g. `VendorSaaS,TCN`.
 3. Anything outside these spaces is treated as not found, even when asked for by name.
 
+### Change which Jira projects the Product chat reads
+Edit `JIRA_PROJECTS` (default `LP`), e.g. `LP,LPH`. Tickets in other projects are treated as not found. Jira uses the same Atlassian email and token as Confluence. Test locally with `uv run python -m app.jira "autopay"`.
+
 ### Rotate keys
 - **Anthropic:** console.anthropic.com → API Keys → create a key → paste into `ANTHROPIC_API_KEY` → delete the old key.
 - **Atlassian:** id.atlassian.com → Security → API tokens → **Create API token** (not "with scopes") → paste into `CONFLUENCE_API_TOKEN` → revoke the old token. Atlassian tokens expire; if the bot says "Can't connect to Confluence", this is the fix. `CONFLUENCE_EMAIL` must be the email of the token's account.
 - **Passcode:** change `APP_PASSCODE` and tell the team the new one.
 
 ### Edit how the bot answers
-Edit `app/prompts/system.md` on GitHub (pencil icon → Commit). Railway redeploys automatically. Keep the "I couldn't find this documented in Confluence." sentence exactly as written; the Request docs button depends on it.
+Edit `app/prompts/system.md` (both chats) or `app/prompts/product.md` (Product chat only) on GitHub (pencil icon → Commit). Railway redeploys automatically. Keep the "I couldn't find this documented in Confluence." sentence exactly as written; the Request docs button depends on it.
 
 ### Change the starter questions
-Set `SUGGESTED_QUESTIONS` to up to three questions separated by `|`. Once a question has been asked at least twice with a cited answer, it replaces a starter automatically.
+Set `SUGGESTED_QUESTIONS` (Customer success) and `SUGGESTED_QUESTIONS_PRODUCT` (Product) to up to three questions each, separated by `|`. Once a question has been asked at least twice with a cited answer, it replaces a starter automatically.
 
 ### Check costs
 - **Quick view:** the **Usage** page in the app (estimates, since the last restart).
@@ -48,7 +51,8 @@ Railway → service → **Deployments** → Active → **View logs**. One line p
 | `AUTH_MODE` | `passcode` or `cloudflare` |
 | `APP_PASSCODE` | Team passcode (secret) |
 | `DOCS_REQUEST_PAGE_ID` | Page ID of the Documentation Requests table |
-| `SUGGESTED_QUESTIONS` | Optional starter questions, separated by `|` |
+| `SUGGESTED_QUESTIONS`, `SUGGESTED_QUESTIONS_PRODUCT` | Optional starter questions per chat, separated by `|` |
+| `JIRA_PROJECTS` | Jira projects the Product chat may search, default `LP` |
 | `PRICE_INPUT_PER_MTOK`, `PRICE_OUTPUT_PER_MTOK` | Optional cost-estimate prices |
 | `ANTHROPIC_MONTHLY_BUDGET` | Optional monthly Claude budget (USD) for the Usage page |
 

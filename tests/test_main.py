@@ -142,3 +142,22 @@ def test_rate_limit_and_usage_without_text(monkeypatch, caplog):
     assert u["claude"]["questions_month"] == usage.RATE_LIMIT + 1 and u["error_kinds"] == {"rate_limited": 1}
     assert "SECRET" not in caplog.text and '"latency_ms": 2000' in caplog.text
     assert client.get("/api/usage").status_code == 401
+
+
+def test_mode_passed_through_and_suggestions_split(monkeypatch):
+    suggestions.reset()
+    seen = []
+
+    def cited(q, h, **kw):
+        seen.append(kw.get("mode"))
+        yield {"type": "done", "text": "x", "sources": [{"title": "t", "url": "u"}], "not_documented": False, "meta": {}}
+    monkeypatch.setattr(agent, "stream_answer", cited)
+    for _ in range(2):
+        client.post("/api/chat", headers={"X-Passcode": "letmein"}, json={"question": "Is autopay shipped yet?", "mode": "product"})
+    client.post("/api/chat", headers={"X-Passcode": "letmein"}, json={"question": "hello there cs"})
+    assert seen == ["product", "product", "cs"]
+    prod = client.get("/api/suggestions?mode=product", headers={"X-Passcode": "letmein"}).json()["questions"]
+    cs = client.get("/api/suggestions?mode=cs", headers={"X-Passcode": "letmein"}).json()["questions"]
+    assert prod[0] == "Is autopay shipped yet?" and "Is autopay shipped yet?" not in cs
+    assert client.post("/api/chat", headers={"X-Passcode": "letmein"},
+                       json={"question": "x", "mode": "admin"}).status_code == 422

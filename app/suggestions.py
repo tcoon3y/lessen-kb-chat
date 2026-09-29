@@ -18,21 +18,21 @@ MAX_TRACKED = 300
 SHOW = 3
 
 _lock = threading.Lock()
-_seen: dict[str, dict] = {}  # normalized -> {"text", "count", "last"}
+_seen: dict[str, dict] = {}  # "mode|normalized" -> {"text", "count", "last", "mode"}
 
 
 def _norm(q: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", "", " ".join(q.lower().split()))[:200]
 
 
-def record(question: str) -> None:
+def record(question: str, mode: str = "cs") -> None:
     q = " ".join(question.split())
     if not (8 <= len(q) <= 160):
         return
-    key = _norm(q)
+    key = f"{mode}|{_norm(q)}"
     now = time.time()
     with _lock:
-        item = _seen.setdefault(key, {"text": q, "count": 0, "last": now})
+        item = _seen.setdefault(key, {"text": q, "count": 0, "last": now, "mode": mode})
         item["count"] += 1
         item["last"] = now
         item["text"] = q
@@ -41,23 +41,28 @@ def record(question: str) -> None:
                 del _seen[k]
 
 
-def defaults() -> list[str]:
-    raw = config.get("SUGGESTED_QUESTIONS")
-    items = [s.strip() for s in raw.split("|") if s.strip()] if raw else [
-        "What can a vendor do on the free tier?",
-        "How does the QBO integration work?",
-        "What is the Free Early Pay offer?",
-    ]
+DEFAULTS = {
+    "cs": ["What can a vendor do on the free tier?", "How does the QBO integration work?",
+           "What is the Free Early Pay offer?"],
+    "product": ["What's the status of Stripe autopay?", "Which tickets are in the free tier epic?",
+                "What's planned for the QBO integration?"],
+}
+
+
+def defaults(mode: str = "cs") -> list[str]:
+    raw = config.get("SUGGESTED_QUESTIONS_PRODUCT" if mode == "product" else "SUGGESTED_QUESTIONS")
+    items = [s.strip() for s in raw.split("|") if s.strip()] if raw else DEFAULTS.get(mode, DEFAULTS["cs"])
     return items[:SHOW]
 
 
-def top() -> list[str]:
+def top(mode: str = "cs") -> list[str]:
     cutoff = time.time() - WINDOW_SECONDS
     with _lock:
-        popular = sorted((v for v in _seen.values() if v["count"] >= MIN_COUNT and v["last"] >= cutoff),
+        popular = sorted((v for v in _seen.values()
+                          if v.get("mode", "cs") == mode and v["count"] >= MIN_COUNT and v["last"] >= cutoff),
                          key=lambda v: (v["count"], v["last"]), reverse=True)
         picked = [v["text"] for v in popular[:SHOW]]
-    for d in defaults():  # top up with defaults
+    for d in defaults(mode):  # top up with defaults
         if len(picked) >= SHOW:
             break
         if _norm(d) not in {_norm(p) for p in picked}:

@@ -69,7 +69,7 @@ def test_search_read_answer_with_sources(fake_confluence):
     assert "reset" in types  # preamble text discarded before tool call
     done = events[-1]
     assert done["text"] == "The free tier covers Lessen work only."
-    assert done["sources"] == [{"title": "Free Tier PRD", "url": "u1", "last_updated": "2026-07-03"}]
+    assert done["sources"] == [{"title": "Free Tier PRD", "url": "u1", "last_updated": "2026-07-03", "kind": "confluence"}]
     assert done["meta"]["tool_calls"] == ["search_confluence", "get_page"]
     assert done["meta"]["tokens"]["input"] == 300
     # system prompt is cached, tools passed, page framed as data
@@ -134,3 +134,39 @@ def test_history_is_used_and_cleaned(fake_confluence):
 def test_real_client_constructs(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")
     assert agent._client() is not None
+
+
+def test_cs_mode_has_no_jira(fake_confluence, monkeypatch):
+    from app import jira
+    monkeypatch.setattr(jira, "search", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no jira in CS")))
+    client = FakeClient([tool_turn("search_jira", {"query": "autopay"}), text_turn(agent.NOT_FOUND_TEXT)])
+    agent.answer("Is autopay shipped?", [], client)
+    assert {t["name"] for t in client.calls[0]["tools"]} == {"search_confluence", "get_page"}
+    res = client.calls[1]["messages"][-1]["content"][0]
+    assert res["is_error"] is True and "isn't available" in res["content"]
+
+
+def test_product_mode_reads_jira(fake_confluence, monkeypatch):
+    from app import jira
+    monkeypatch.setattr(jira, "search", lambda q, limit=8: [{"key": "LP-7", "summary": "Autopay", "status": "Done"}])
+    monkeypatch.setattr(jira, "get_issue", lambda k: {
+        "key": "LP-7", "summary": "Autopay", "type": "Story", "status": "Done", "resolution": "Done",
+        "fix_versions": ["2.4"], "parent": "LP-846 Payments", "priority": "High", "labels": [], "assignee": "",
+        "last_updated": "2026-09-20", "url": "https://x/browse/LP-7", "text": "Shipped in 2.4"})
+    client = FakeClient([
+        tool_turn("search_jira", {"query": "autopay"}),
+        tool_turn("get_jira_issue", {"key": "LP-7"}, tid="t2"),
+        text_turn("Yes, autopay shipped in 2.4 (LP-7)."),
+    ])
+    events = list(agent.stream_answer("Is autopay shipped?", [], client, mode="product"))
+    done = events[-1]
+    assert {t["name"] for t in client.calls[0]["tools"]} >= {"search_jira", "get_jira_issue"}
+    assert client.calls[0]["system"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "Jira" in client.calls[0]["system"][-1]["text"]
+    assert done["mode"] == "product" and done["sources"][0]["title"] == "LP-7: Autopay"
+    assert done["sources"][0]["kind"] == "jira"
+    assert [e["text"] for e in events if e["type"] == "status"] == ["Searching Jira…", "Reading a ticket…"]
+
+
+def test_product_not_found_phrase_detected():
+    assert agent.is_not_documented("I couldn't find this documented in Confluence or Jira. Related: x")
