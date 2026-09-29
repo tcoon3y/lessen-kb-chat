@@ -131,6 +131,7 @@
     padding: 6px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); font-variant-numeric: tabular-nums; }
   .list-card ul { margin: 6px 0 0; padding-left: 18px; }
   .usage .note { margin: 0; }
+  .usage-bar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: -4px; }
   .usec { display: flex; flex-direction: column; gap: 10px; }
   .usec h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 6px 0 0; }
   .sec-head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -257,6 +258,8 @@
     </div>
 
     <div class="usage" id="usageView" hidden>
+      <div class="usage-bar"><span class="note" id="usageUpdated">Loading…</span>
+        <button class="btn" type="button" id="usageRefresh">Refresh</button></div>
       <section class="usec">
         <h2>Claude</h2>
         <div class="tiles" id="tilesClaude"></div>
@@ -551,7 +554,8 @@
     $("topDocs").textContent = chat ? "Request doc" : "Back";
     if (chat) { setMode(view); input.focus(); }
     else if (view === "docs") { $("docForm").hidden = false; $("docDone").hidden = true; $("docSubject").focus(); }
-    else if (view === "usage") loadUsage();
+    else if (view === "usage") { loadUsage(); startUsageTimer(); }
+    if (view !== "usage") stopUsageTimer();
   }
 
   const nf = (n) => (n === null || n === undefined) ? "–" : n.toLocaleString();
@@ -564,11 +568,35 @@
     `<div class="tile ${cls}"><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ""}` +
     (meterPct == null ? "" : `<div class="meter"><i style="width:${Math.min(100, meterPct)}%"></i></div>`) + `</div>`;
 
+  let usageLoaded = false, usageTimer = null, usageAt = 0;
+  const USAGE_EVERY = 5 * 60 * 1000;
+  function usageAge() {
+    if (!usageAt) return;
+    const s = Math.round((Date.now() - usageAt) / 1000);
+    $("usageUpdated").textContent = `Updated ${s < 5 ? "just now" : s < 60 ? `${s}s ago` : `${Math.round(s / 60)} min ago`} · refreshes every 5 min`;
+  }
+  function startUsageTimer() {
+    stopUsageTimer();
+    usageTimer = setInterval(() => {
+      if (document.hidden || $("usageView").hidden) return;
+      if (Date.now() - usageAt >= USAGE_EVERY - 500) loadUsage(); else usageAge();
+    }, 30000);
+  }
+  function stopUsageTimer() { if (usageTimer) clearInterval(usageTimer); usageTimer = null; }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !$("usageView").hidden && Date.now() - usageAt > USAGE_EVERY) loadUsage();
+  });
+
   async function loadUsage() {
-    $("tilesClaude").innerHTML = tile("Loading…", "", "");
+    if (!usageLoaded) $("tilesClaude").innerHTML = tile("Loading…", "", "");
     let u;
     try { const r = await fetch("/api/usage", { headers: headers() }); if (r.status === 401) return showLogin(true); u = await r.json(); }
-    catch (e) { $("tilesClaude").innerHTML = tile("Couldn't load usage", "–", "Try again in a moment."); return; }
+    catch (e) {
+      if (!usageLoaded) $("tilesClaude").innerHTML = tile("Couldn't load usage", "–", "Try again in a moment.");
+      $("usageUpdated").textContent = "Couldn't refresh. Will retry in 5 min";
+      return;
+    }
+    usageLoaded = true; usageAt = Date.now(); usageAge();
     const c = u.claude, f = u.confluence;
     const early = c.projected_month == null ? "Needs about an hour of data" : `Based on ${u.days_of_data < 1 ? "less than a day" : u.days_of_data + " days"} of data`;
     const projCls = c.projected_pct == null ? "" : c.projected_pct >= 100 ? "bad" : c.projected_pct >= 80 ? "warn" : "";
@@ -583,8 +611,13 @@
       tile("API calls this month", nf(f.calls_month), `${nf(f.calls_today)} today`) +
       tile("Projected month-end", f.projected_month == null ? "–" : nf(f.projected_month), f.projected_month == null ? "Needs about an hour of data" : "calls, at the current rate") +
       tile("Rate-limited", nf(f.rate_limited_month), f.rate_limited_month ? "times this month. Atlassian asked the bot to slow down" : "times this month", f.rate_limited_month ? "warn" : "") +
-      (qRemain ? tile("Atlassian quota left", `${nf(+qRemain)}${qLimit ? ` / ${nf(+qLimit)}` : ""}`, "from Atlassian's latest response", "", qLimit ? 100 * qRemain / qLimit : null)
-               : tile("Atlassian quota", "Not reported", "Atlassian hasn't sent quota figures. Rate-limit hits above are the signal to watch."));
+      (qRemain ? (() => {
+          const low = q.lowest_remaining ?? +qRemain, pct = qLimit ? 100 * low / qLimit : null;
+          return tile("Burst limit headroom", `${nf(low)}${qLimit ? ` / ${nf(+qLimit)}` : ""}`,
+            "Lowest seen since restart. Atlassian's short-window limit refills continuously; it is not a monthly cap.",
+            pct != null && pct < 10 ? "bad" : pct != null && pct < 25 ? "warn" : "", pct);
+        })()
+               : tile("Burst limit headroom", "Not reported", "Atlassian hasn't sent limit figures. Rate-limit hits above are the signal to watch."));
     const errs = Object.entries(u.error_kinds || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     $("errCard").hidden = !errs.length;
     $("errList").innerHTML = errs.map(([k, n]) => `<li>${esc(ERR_NAMES[k] || k)}: <b>${n}</b></li>`).join("");
@@ -593,10 +626,11 @@
     loadDocStats();
   }
 
+  let docsLoaded = false;
   async function loadDocStats() {
     if (!cfg.docs_requests_enabled) { $("docSec").hidden = true; return; }
     $("docStatsLink").href = cfg.docs_requests_url || "#";
-    $("tilesDocs").innerHTML = tile("Loading…", "", "");
+    if (!docsLoaded) $("tilesDocs").innerHTML = tile("Loading…", "", "");
     try {
       const r = await fetch("/api/doc-stats", { headers: headers() });
       if (!r.ok) throw new Error();
@@ -607,8 +641,9 @@
         tile("Doc requests", nf(t["Request"].open), sub("Request")) +
         tile("Not documented", nf(t["Not documented"].open), sub("Not documented")) +
         tile("Incorrect answers", nf(t["Incorrect answer"].open), sub("Incorrect answer"), t["Incorrect answer"].open ? "warn" : "");
+      docsLoaded = true;
     } catch (e) {
-      $("tilesDocs").innerHTML = tile("Couldn't read the Documentation Requests page", "–", "Try again in a moment.");
+      if (!docsLoaded) $("tilesDocs").innerHTML = tile("Couldn't read the Documentation Requests page", "–", "Try again in a moment.");
     }
   }
 
@@ -653,6 +688,7 @@
   document.querySelectorAll("#topModes button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.mode)));
   $("navDocs").addEventListener("click", (e) => { e.preventDefault(); showView("docs"); });
   $("navUsage").addEventListener("click", (e) => { e.preventDefault(); showView("usage"); });
+  $("usageRefresh").addEventListener("click", () => loadUsage());
   $("topDocs").addEventListener("click", () => showView($("chatView").hidden ? mode : "docs"));
   $("docAnother").addEventListener("click", () => { $("docForm").reset(); $("docForm").hidden = false; $("docDone").hidden = true; $("docSubject").focus(); });
   $("docForm").addEventListener("submit", async (e) => {

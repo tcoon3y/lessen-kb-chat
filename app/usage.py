@@ -91,7 +91,15 @@ def record_confluence(status: int, headers) -> None:
             d["confluence_429"] += 1
         seen = {h: headers.get(h) for h in QUOTA_HEADERS if headers.get(h)}
         if seen:
-            _quota.clear(); _quota.update(seen); _quota["at"] = datetime.now(timezone.utc).isoformat()
+            lowest = _quota.get("lowest_remaining")
+            _quota.update(seen)
+            _quota["at"] = datetime.now(timezone.utc).isoformat()
+            try:
+                rem = int(seen["x-ratelimit-remaining"])
+                _quota["lowest_remaining"] = rem if lowest is None else min(lowest, rem)
+            except (KeyError, ValueError):
+                if lowest is not None:
+                    _quota["lowest_remaining"] = lowest
 
 
 def record_event(name: str) -> None:  # "doc_requests" or "feedback"

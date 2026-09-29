@@ -31,3 +31,11 @@ def test_budget(monkeypatch):
     usage.record_answer({"latency_ms": 1, "tokens": {"input": 1_000_000, "output": 0}}, False)
     c = usage.summary()["claude"]
     assert c["cost_month"] == 3.0 and c["budget"] == 50 and c["budget_used_pct"] == 6
+
+
+def test_quota_tracks_lowest_remaining():
+    usage.reset()
+    for rem in ("399", "372", "399"):
+        usage.record_confluence(200, {"x-ratelimit-remaining": rem, "x-ratelimit-limit": "400"})
+    q = usage.summary()["confluence"]["quota"]
+    assert q["x-ratelimit-remaining"] == "399" and q["lowest_remaining"] == 372
