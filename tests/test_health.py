@@ -14,4 +14,4 @@ def test_healthz():
 def test_index_served():
     r = client.get("/")
     assert r.status_code == 200
-    assert "Lessen Pro KB Chat" in r.text
+    assert "Lessen Pro Knowledge Bot" in r.text

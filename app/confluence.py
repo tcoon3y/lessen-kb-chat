@@ -37,11 +37,17 @@ def _spaces() -> list[str]:
     return spaces
 
 
+def _count(response: httpx.Response) -> None:
+    from app import usage  # local import avoids a cycle
+    usage.record_confluence(response.status_code, response.headers)
+
+
 def _client() -> httpx.Client:
     return httpx.Client(
         auth=(config.require("CONFLUENCE_EMAIL"), config.require("CONFLUENCE_API_TOKEN")),
         timeout=TIMEOUT,
         headers={"Accept": "application/json"},
+        event_hooks={"response": [_count]},
     )
 
 
@@ -222,6 +228,23 @@ def diagnose() -> None:
     body = r.text[:300].replace("\n", " ")
     if r.status_code != 200 or '"anonymous"' in body:
         print(f"  Atlassian says: {body}")
+
+
+_login_cache: dict = {"ok": None, "at": 0.0}
+
+
+def login_ok(max_age: float = 600.0) -> bool:
+    """True if the Confluence credentials are accepted (cached for 10 minutes)."""
+    import time
+    now = time.monotonic()
+    if _login_cache["ok"] is not None and now - _login_cache["at"] < max_age:
+        return _login_cache["ok"]
+    try:
+        ok = whoami() is not None
+    except Exception:
+        ok = False
+    _login_cache.update(ok=ok, at=now)
+    return ok
 
 
 def _cli() -> None:

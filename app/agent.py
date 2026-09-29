@@ -14,6 +14,7 @@ from typing import Any, Iterator
 import anthropic
 
 from app import config, confluence
+from app.errors import ConfluenceLoginError, from_confluence
 
 MAX_TOOL_ROUNDS = 6
 MAX_TOKENS = 1024
@@ -105,17 +106,23 @@ def _run_tool(name: str, args: dict, read_pages: dict) -> tuple[str, bool]:
     except confluence.PageNotFound:
         return "Page not found.", True
     except Exception as exc:  # network errors etc. — never include secrets
+        mapped = from_confluence(exc)
+        if mapped is not None:
+            raise mapped from None  # stop and show a clear error instead of a guess
         return f"Tool error: {type(exc).__name__}", True
 
 
 def stream_answer(question: str, history: list[dict] | None = None,
-                  client: anthropic.Anthropic | None = None) -> Iterator[dict]:
+                  client: anthropic.Anthropic | None = None,
+                  check_login: bool = False) -> Iterator[dict]:
     """Yield events: {"type": "status"|"text"|"reset"|"done", ...}.
 
     "reset" means discard text streamed so far (Claude spoke before calling a tool).
     "done" carries text, sources and meta (latency, tool calls, token counts — no content).
     """
     started = time.monotonic()
+    if check_login and not confluence.login_ok():
+        raise ConfluenceLoginError("Confluence login failed")
     client = client or _client()
     messages = _clean_history(history) + [{"role": "user", "content": question.strip()}]
     read_pages: dict[str, dict] = {}

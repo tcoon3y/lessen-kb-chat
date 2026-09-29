@@ -13,10 +13,14 @@ Private web chat answering Lessen Pro questions from Confluence. Python 3.12, Fa
 - `app/static/index.html` — single self-contained chat page
 
 - `Dockerfile` + `railway.json` — Railway builds the Docker image; health check `/healthz`
-- `app/docs_requests.py` — the ONLY write: fills a row in the Documentation Requests table (DOCS_REQUEST_PAGE_ID)
+- `app/docs_requests.py` — the ONLY write: fills a row in the Documentation Requests table (DOCS_REQUEST_PAGE_ID); follows the table's header columns (Subject, Question, optional Type, DONE?, DOC Ref)
+- `app/errors.py` — maps Claude/Confluence failures to user-facing error cards
+- `app/usage.py` — in-memory counts (no text), cost estimates, 20 q / 10 min rate limit
+- `app/suggestions.py` — popular questions (asked 2+ times with a cited answer), memory only
+- UI views: Ask a question, Request a doc (form), Usage (dashboard); copy answer, report incorrect answer, source freshness dates
 
 ## Env vars
-ANTHROPIC_API_KEY (secret), CLAUDE_MODEL, CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN (secret), ALLOWED_SPACES, AUTH_MODE (passcode|cloudflare), APP_PASSCODE (secret, passcode mode only), DOCS_REQUEST_PAGE_ID
+ANTHROPIC_API_KEY (secret), CLAUDE_MODEL, CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN (secret), ALLOWED_SPACES, AUTH_MODE (passcode|cloudflare), APP_PASSCODE (secret, passcode mode only), DOCS_REQUEST_PAGE_ID, SUGGESTED_QUESTIONS, PRICE_INPUT_PER_MTOK, PRICE_OUTPUT_PER_MTOK
 
 ## Guardrails
 - Never type, print, log or commit secret values; refer to env vars by name only.

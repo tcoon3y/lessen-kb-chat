@@ -68,3 +68,41 @@ def test_requests_page_is_never_read_or_cited():
     assert [h["page_id"] for h in hits] == ["7"]
     with pytest.raises(confluence.PageNotFound):
         confluence.get_page("42", client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_row_follows_type_column():
+    table5 = TABLE.replace("<th><p>DONE?</p></th>", "<th><p>Type</p></th><th><p>DONE?</p></th>")
+    table5 = table5.replace("<td><p /></td><td><p /></td><td><p /></td><td><p /></td></tr>",
+                            "<td><p /></td><td><p /></td><td><p /></td><td><p /></td><td><p /></td></tr>")
+    hdr = docs_requests.header_names(table5)
+    assert hdr == ["subject", "question", "type", "done?", "doc ref"]
+    row = docs_requests.build_row("QBO", "Q?", "2026-09-29", "Incorrect answer", hdr)
+    assert row == ("<tr><td><p>QBO</p></td><td><p>Q? (asked 2026-09-29)</p></td>"
+                   "<td><p>Incorrect answer</p></td><td><p /></td><td><p /></td></tr>")
+
+
+def test_no_type_column_prefixes_subject():
+    row = docs_requests.build_row("QBO", "Q?", "d", "Incorrect answer", docs_requests.header_names(TABLE))
+    assert "<p>Incorrect answer: QBO</p>" in row
+    assert "<p>Plain</p>" in docs_requests.build_row("Plain", "Q?", "d", "Request", docs_requests.header_names(TABLE))
+
+
+def test_parse_stats_counts_types_and_done():
+    t = ('<table><tbody><tr><th><p>Subject</p></th><th><p>Question</p></th><th><p>Type</p></th>'
+         '<th><p>DONE?</p></th><th><p>DOC Ref</p></th></tr>'
+         '<tr><td><p>A</p></td><td><p>q</p></td><td><p>Request</p></td><td><p>Yes</p></td><td><p /></td></tr>'
+         '<tr><td><p>B</p></td><td><p>q</p></td><td><p>Incorrect answer</p></td><td><p /></td><td><p /></td></tr>'
+         '<tr><td><p>C</p></td><td><p>q</p></td><td><p>Not documented</p></td><td><ac:task-list><ac:task>'
+         '<ac:task-status>complete</ac:task-status></ac:task></ac:task-list></td><td><p /></td></tr>'
+         '<tr><td><p /></td><td><p /></td><td><p /></td><td><p /></td><td><p /></td></tr></tbody></table>')
+    st = docs_requests.parse_stats(t)
+    assert st["open"] == 1 and st["done"] == 2
+    assert st["by_type"]["Incorrect answer"] == {"open": 1, "done": 0}
+    assert st["by_type"]["Not documented"] == {"open": 0, "done": 1}
+
+
+def test_parse_stats_without_type_column_uses_subject_prefix():
+    t = TABLE.replace("<tr><td><p /></td><td><p /></td><td><p /></td><td><p /></td></tr>",
+                      "<tr><td><p>Incorrect answer: QBO</p></td><td><p>q</p></td><td><p /></td><td><p /></td></tr>", 1)
+    st = docs_requests.parse_stats(t)
+    assert st["by_type"]["Incorrect answer"]["open"] == 1 and st["by_type"]["Request"]["done"] == 1
