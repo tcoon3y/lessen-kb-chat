@@ -321,6 +321,8 @@
     feedback: { title: "User feedback", placeholder: "Ask what users and customers are saying…", history: [] },
   };
   let mode = "cs";
+  const newSession = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+  for (const k of Object.keys(MODES)) MODES[k].session = newSession();
   let messages = $("messages-cs");   // history for each chat lives in this tab only
   let passcode = "";
   let busy = false;
@@ -462,7 +464,7 @@
     f.onsubmit = async (e) => {
       e.preventDefault(); send.disabled = true; send.textContent = "Sending…";
       try {
-        const ok = await postJSON("/api/feedback", { question, note: inp.value.trim(),
+        const ok = await postJSON("/api/feedback", { question, note: inp.value.trim(), mode: done.mode || mode,
           sources: (done.sources || []).map((s) => s.title) });
         if (ok) { f.outerHTML = '<p class="note fb">Thanks. Your feedback was added to Doc requests.</p>'; }
         else { send.disabled = false; send.textContent = "Couldn't send. Try again"; }
@@ -486,7 +488,7 @@
     let text = "", done = null, failed = false;
 
     try {
-      const r = await fetch("/api/chat", { method: "POST", headers: headers(), body: JSON.stringify({ question, history, mode: askMode }) });
+      const r = await fetch("/api/chat", { method: "POST", headers: headers(), body: JSON.stringify({ question, history, mode: askMode, session_id: MODES[askMode].session }) });
       if (r.status === 401) { a.wrap.remove(); u.wrap.remove(); busy = false; send.disabled = false; return showLogin(true); }
       if (!r.ok || !r.body) throw new Error("bad response");
       const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
@@ -638,7 +640,10 @@
     $("errCard").hidden = !errs.length;
     $("errList").innerHTML = errs.map(([k, n]) => `<li>${esc(ERR_NAMES[k] || k)}: <b>${n}</b></li>`).join("");
     const since = new Date(u.since).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    $("usageNote").textContent = `Claude and Confluence figures count from the last restart (${since}) and are estimates; check console.anthropic.com for exact billing. Doc request counts come live from Confluence.`;
+    $("usageNote").textContent = (u.stored
+      ? "Claude and Confluence figures cover the whole month (saved in the database). "
+      : `Claude and Confluence figures count from the last restart (${since}). `) +
+      "Costs are estimates; check console.anthropic.com for exact billing. Doc request counts come live from Confluence.";
     loadDocStats();
   }
 
@@ -727,6 +732,7 @@
     if (busy) return;
     showView(mode);
     MODES[mode].history.length = 0;
+    MODES[mode].session = newSession();
     messages.querySelectorAll(".msg").forEach((n) => n.remove());
     messages.querySelector(".empty").hidden = false; input.value = ""; loadSuggestions(); input.focus();
   }));

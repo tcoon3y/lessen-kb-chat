@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app import agent, config, docs_requests, errors, jira, notion, suggestions, usage
+from app import agent, config, db, docs_requests, errors, jira, notion, suggestions, usage
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -22,6 +22,7 @@ log = logging.getLogger("kbchat")
 @asynccontextmanager
 async def lifespan(_app):
     notion.start_background()  # crawl the research pages once so the first question is fast
+    db.start_maintenance()     # create tables; clear question/answer text past RETENTION_DAYS daily
     yield
 
 
@@ -36,6 +37,7 @@ class Turn(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     mode: Literal["cs", "product", "feedback"] = "cs"
+    session_id: str = Field(default="", max_length=64)
     history: list[Turn] = Field(default_factory=list, max_length=40)
 
 
@@ -46,6 +48,7 @@ class DocsRequest(BaseModel):
 
 class Feedback(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    mode: str = Field(default="", max_length=20)
     note: str = Field(default="", max_length=500)
     sources: list[str] = Field(default_factory=list, max_length=10)
 
@@ -130,6 +133,8 @@ def chat(req: ChatRequest, request: Request, x_passcode: str | None = Header(def
     history = [t.model_dump() for t in req.history]
     if not usage.allow(_who(request, cf_access_authenticated_user_email)):
         usage.record_error("rate_limited")
+        db.log_chat(req.mode, req.question, None, None, "rate_limited", error_kind="rate_limited",
+                    session_id=req.session_id or None, history_turns=len(history))
         log.info('{"event": "chat", "outcome": "rate_limited"}')
         err = {"type": "error", "kind": "rate_limited", "title": "Slow down a little",
                "text": f"You've asked {usage.RATE_LIMIT} questions in the last {usage.RATE_WINDOW // 60} minutes. "
@@ -145,6 +150,10 @@ def chat(req: ChatRequest, request: Request, x_passcode: str | None = Header(def
                         suggestions.record(req.question, req.mode)
                     meta = event.get("meta", {})
                     usage.record_answer(meta, nd)
+                    db.log_chat(req.mode, req.question, event.get("text"), event.get("sources"),
+                                "not_documented" if nd else "answered", meta,
+                                cost=usage.cost(meta.get("tokens") or {}), session_id=req.session_id or None,
+                                history_turns=len(history))
                     # One line per request: numbers only, never question or answer text.
                     log.info(json.dumps({"event": "chat", "mode": req.mode, "outcome": "not_documented" if nd else "answered",
                                          "latency_ms": meta.get("latency_ms"), "tool_calls": meta.get("tool_calls"),
@@ -154,6 +163,8 @@ def chat(req: ChatRequest, request: Request, x_passcode: str | None = Header(def
         except Exception as exc:  # never leak details or content
             err = errors.classify(exc)
             usage.record_error(err["kind"])
+            db.log_chat(req.mode, req.question, None, None, "error", error_kind=err["kind"],
+                        session_id=req.session_id or None, history_turns=len(history))
             log.error(json.dumps({"event": "chat", "outcome": "error", "kind": err["kind"],
                                   "exception": type(exc).__name__}))
             yield _sse({"type": "error", **err})
@@ -170,6 +181,7 @@ def request_docs(req: DocsRequest, x_passcode: str | None = Header(default=None)
         kind = "Request" if req.subject.strip() else "Not documented"
         docs_requests.add_request(subject, req.question, kind=kind)
         usage.record_event("doc_requests")
+        db.log_event("doc_request" if kind == "Request" else "not_documented_request", req.question, subject)
     except docs_requests.RequestsPageError as exc:
         log.error("docs request failed: %s", exc)  # status + Confluence message only
         raise HTTPException(502, "Couldn't save the request. Please try again.")
@@ -189,8 +201,10 @@ def feedback(req: Feedback, x_passcode: str | None = Header(default=None)) -> di
     if req.sources:
         detail += " | Cited: " + "; ".join(s[:120] for s in req.sources)
     try:
-        docs_requests.add_request(agent.make_subject(req.question), detail, kind="Incorrect answer")
+        subject = agent.make_subject(req.question)
+        docs_requests.add_request(subject, detail, kind="Incorrect answer")
         usage.record_event("feedback")
+        db.log_event("incorrect_answer", req.question, subject, req.note.strip(), req.mode or None, req.sources)
     except docs_requests.RequestsPageError as exc:
         log.error("feedback failed: %s", exc)
         raise HTTPException(502, "Couldn't save the feedback. Please try again.")

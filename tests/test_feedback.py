@@ -125,3 +125,11 @@ def test_feedback_not_found_phrase():
 def test_notion_client_sends_auth_and_version(monkeypatch):
     c = notion._client()
     assert c.headers["Notion-Version"] == notion.NOTION_VERSION and c.headers["Authorization"] == "Bearer secret_x"
+
+
+def test_notion_first_read_does_not_block(monkeypatch):
+    started = []
+    monkeypatch.setattr(notion.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: started.append(1)})())
+    with pytest.raises(notion.NotionLoading):
+        notion.search("anything")
+    assert started == [1]

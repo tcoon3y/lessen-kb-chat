@@ -9,7 +9,7 @@ import time
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
 
-from app import config
+from app import config, db
 
 RATE_LIMIT = 20            # questions
 RATE_WINDOW = 10 * 60      # seconds
@@ -82,8 +82,9 @@ QUOTA_HEADERS = ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-rese
                  "x-ratelimit-nearlimit", "ratelimit-reason", "retry-after")
 
 
-def record_confluence(status: int, headers) -> None:
+def record_confluence(status: int, headers, service: str = "atlassian") -> None:
     """Called for every Confluence API response (via an httpx hook). Numbers and header values only."""
+    db.bump_api_call(service, status == 429)
     with _lock:
         d = _days[_today()]
         d["confluence_calls"] += 1
@@ -131,6 +132,26 @@ def summary(days: int = 14) -> dict:
     cost_month = sum(_day_cost(d) for d in month.values())
     calls_month = sum(d.get("confluence_calls", 0) for d in month.values())
     start = max(month_start, _started.astimezone(_CHICAGO))
+    stored = db.ready()
+    if stored:  # the database has the whole month, not just since the last restart
+        rows = db.daily_usage((today - timedelta(days=max(days, today.day) - 1)).isoformat())
+        by_day = {r["date"]: r for r in rows}
+        series = [{"date": s["date"], "cost": round(by_day.get(s["date"], {}).get("cost", 0.0), 4),
+                   "questions": by_day.get(s["date"], {}).get("questions", 0)} for s in series]
+        mrows = [r for r in rows if r["date"][:7] == today.isoformat()[:7]]
+        cost_month = sum(r["cost"] for r in mrows)
+        calls = [c for c in db.api_calls(month_start.date().isoformat())]
+        calls_month = sum(c["calls"] for c in calls)
+        month = {r["date"]: {"questions": r["questions"], "confluence_calls": 0, "confluence_429": 0,
+                             **{k: r[k] for k in ("input", "output", "cache_read", "cache_write")}} for r in mrows}
+        for c in calls:
+            month.setdefault(c["date"], {"questions": 0})
+            month[c["date"]]["confluence_calls"] = month[c["date"]].get("confluence_calls", 0) + c["calls"]
+            month[c["date"]]["confluence_429"] = month[c["date"]].get("confluence_429", 0) + c["rate_limited"]
+        errors = db.error_kinds(month_start.date().isoformat()) or errors
+        first = db.first_seen()
+        if first:
+            start = max(month_start, datetime.fromisoformat(first).astimezone(_CHICAGO))
     elapsed = max((now - start).total_seconds() / 86400, 0)
     remaining = max((next_month - now).total_seconds() / 86400, 0)
     enough = elapsed >= 1 / 24
@@ -144,11 +165,17 @@ def summary(days: int = 14) -> dict:
         budget = None
     proj_cost = project(cost_month)
     today_d = month.get(today.isoformat(), {})
+    if stored:
+        today_row = next((r for r in db.daily_usage(today.isoformat())), None)
+        cost_today = today_row["cost"] if today_row else 0.0
+    else:
+        cost_today = _day_cost(today_d)
     return {
         "since": _started.isoformat(),
+        "stored": stored,
         "days_of_data": round(elapsed, 1),
         "claude": {
-            "cost_today": round(_day_cost(today_d), 2),
+            "cost_today": round(cost_today, 2),
             "cost_month": round(cost_month, 2),
             "projected_month": proj_cost,
             "budget": budget,

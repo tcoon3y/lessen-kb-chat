@@ -23,6 +23,7 @@ MAX_PAGES = 300
 MAX_PAGE_CHARS = 60_000
 MAX_READ_CHARS = 20_000
 MAX_DEPTH = 6
+VERBOSE = False  # the CLI turns this on to show progress
 TEXT_TYPES = ("paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item",
               "to_do", "toggle", "quote", "callout", "code", "transcription")
 
@@ -33,6 +34,10 @@ class NotionNotConfigured(Exception):
 
 class NotionPageNotFound(Exception):
     pass
+
+
+class NotionLoading(Exception):
+    """The first read of the research pages hasn't finished yet."""
 
 
 def enabled() -> bool:
@@ -114,6 +119,8 @@ class _Crawler:
         entry = {"id": pid, "title": title, "path": " / ".join(path), "url": _url(pid),
                  "last_updated": edited, "text": ""}
         self.pages[pid] = entry
+        if VERBOSE:
+            print(f"  reading {len(self.pages)}: {' / '.join(path + [title])}", flush=True)
         parts: list[str] = []
         self.blocks(pid, parts, path + [title], depth, 0)
         entry["text"] = "\n".join(p for p in parts if p.strip())[:MAX_PAGE_CHARS]
@@ -174,13 +181,22 @@ def refresh(client: httpx.Client | None = None) -> None:
             client.close()
 
 
-def _ensure_fresh(wait: float = 45.0) -> None:
+def _ensure_fresh(block: bool = False) -> None:
+    """Never makes a chat wait for a full read: if nothing is loaded yet, start a background
+    read and raise NotionLoading so the bot answers from its other sources meanwhile."""
     if not enabled():
         raise NotionNotConfigured()
     stale = time.monotonic() - _state["at"] > REFRESH_SECONDS
     if not _state["pages"]:
-        refresh()  # first use: crawl now
-    elif stale and not _state["running"]:
+        if block:
+            refresh()
+            return
+        if _state["error"] and not _state["running"]:
+            raise PermissionError(_state["error"])
+        if not _state["running"]:
+            threading.Thread(target=refresh, daemon=True).start()
+        raise NotionLoading()
+    if stale and not _state["running"]:
         threading.Thread(target=refresh, daemon=True).start()
 
 
@@ -224,10 +240,13 @@ def get_page(page_id: str) -> dict:
 
 
 def _cli() -> None:
+    global VERBOSE
+    VERBOSE = True
     query = " ".join(sys.argv[1:]).strip()
+    print("Connecting to Notion and reading the User Research pages (can take a minute or two)...", flush=True)
     refresh()
     st = status()
-    print(f"Notion: {st['pages']} pages under the research root" + (f" (error: {st['error']})" if st["error"] else ""))
+    print(f"\nNotion: {st['pages']} pages under the research root" + (f" (error: {st['error']})" if st["error"] else ""), flush=True)
     if st["error"]:
         print("Check NOTION_TOKEN and that the User Research page is shared with your Notion integration.")
         raise SystemExit(1)

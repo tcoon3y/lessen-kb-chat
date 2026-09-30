@@ -1,6 +1,6 @@
 # Lessen Pro Knowledge Bot
 
-A private web chat that answers Lessen Pro questions from Confluence. It has three chats: **Customer success** (Confluence only), **Product** (Confluence plus read-only Jira search in project LP) and **User feedback** (Notion user research, the CS feedback sheet, and Jira LP + LPH). Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. Chat history lives only in the browser tab. It runs on Railway behind a shared passcode.
+A private web chat that answers Lessen Pro questions from Confluence. It has three chats: **Customer success** (Confluence only), **Product** (Confluence plus read-only Jira search in project LP) and **User feedback** (Notion user research, the CS feedback sheet, and Jira LP + LPH). Each question goes to Claude, which searches and reads pages from the allowed Confluence spaces (read-only) and replies with a short answer plus linked source pages. People can request missing docs or report wrong answers; both add a row to the Documentation Requests table in Confluence, the only page the bot can write to. With a Railway Postgres database attached, questions, answers, sources, timing, tokens and cost are saved for a year (then the text is cleared, counts are kept); without one, nothing is stored. It runs on Railway behind a shared passcode.
 
 ## Runbook
 
@@ -20,6 +20,13 @@ Edit `JIRA_PROJECTS` (default `LP`), e.g. `LP,LPH`. Tickets in other projects ar
 - **Jira:** this chat searches `JIRA_PROJECTS_FEEDBACK` (default `LP,LPH`).
 - Edit its instructions in `app/prompts/feedback.md`.
 
+### Database (saved questions, answers and usage)
+- **Set up:** in the Railway project click **+ Create → Database → PostgreSQL**. Then open the app service → **Variables** → **+ New Variable** → **Add Reference** → choose `DATABASE_URL` from Postgres. Deploy. Tables are created automatically on start.
+- **What's saved:** `chats` (question, answer, sources, chat mode, outcome, time taken, tokens, estimated cost, a per-tab conversation id), `events` (doc requests, not-documented requests, incorrect-answer reports) and `api_calls` (daily Atlassian/Notion call counts).
+- **Retention:** question/answer text is cleared after `RETENTION_DAYS` (default 365); counts and costs stay.
+- **Browse it:** Railway → Postgres → **Data** tab, or connect any SQL client with the connection details shown there.
+- If the database is down, the bot keeps answering; it just stops saving until it's back.
+
 ### Rotate keys
 - **Anthropic:** console.anthropic.com → API Keys → create a key → paste into `ANTHROPIC_API_KEY` → delete the old key.
 - **Atlassian:** id.atlassian.com → Security → API tokens → **Create API token** (not "with scopes") → paste into `CONFLUENCE_API_TOKEN` → revoke the old token. Atlassian tokens expire; if the bot says "Can't connect to Confluence", this is the fix. `CONFLUENCE_EMAIL` must be the email of the token's account.
@@ -32,13 +39,13 @@ Edit `app/prompts/system.md` (both chats) or `app/prompts/product.md` (Product c
 Set `SUGGESTED_QUESTIONS` (Customer success) and `SUGGESTED_QUESTIONS_PRODUCT` (Product) to up to three questions each, separated by `|`. Once a question has been asked at least twice with a cited answer, it replaces a starter automatically.
 
 ### Check costs
-- **Quick view:** the **Usage** page in the app (estimates, since the last restart).
+- **Quick view:** the **Usage** page in the app (estimates; the whole month when the database is attached, otherwise since the last restart).
 - **Exact billing:** console.anthropic.com → Usage / Billing. Keep a monthly spend limit set there; when it's hit, the bot shows "Monthly usage limit reached".
 - **Railway:** railway.com → project → Usage (Hobby plan, about $5/month).
 - Estimates assume $3 / $15 per million input/output tokens. Override with `PRICE_INPUT_PER_MTOK` and `PRICE_OUTPUT_PER_MTOK`.
 
 ### Read the logs
-Railway → service → **Deployments** → Active → **View logs**. One line per question with outcome, latency, tool calls and token counts. Question and answer text are never logged. Error lines name the problem (`confluence_login`, `claude_limit`, `rate_limited`, …).
+Railway → service → **Deployments** → Active → **View logs**. One line per question with outcome, latency, tool calls and token counts. Question and answer text never go to the logs (they're only in the database). Error lines name the problem (`confluence_login`, `claude_limit`, `rate_limited`, …).
 
 ### Limits
 - 20 questions per 10 minutes per person (per IP address, or per email when behind Cloudflare Access).
@@ -65,6 +72,8 @@ Railway → service → **Deployments** → Active → **View logs**. One line p
 | `JIRA_PROJECTS_FEEDBACK` | Jira projects the User feedback chat may search, default `LP,LPH` |
 | `PRICE_INPUT_PER_MTOK`, `PRICE_OUTPUT_PER_MTOK` | Optional cost-estimate prices |
 | `ANTHROPIC_MONTHLY_BUDGET` | Optional monthly Claude budget (USD) for the Usage page |
+| `DATABASE_URL` | Postgres connection (Railway reference variable); empty = nothing stored |
+| `RETENTION_DAYS` | Days to keep question/answer text, default 365 |
 
 ## Run locally
 

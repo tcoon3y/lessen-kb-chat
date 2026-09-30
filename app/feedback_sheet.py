@@ -98,3 +98,32 @@ def search(query: str = "", sheet: str = "", limit: int = 25, client: httpx.Clie
     hits.sort(key=lambda h: -h[0])
     return {"synced": data["synced"], "matches": [h for _, h in hits[:max(1, min(limit, 40))]],
             "total_matches": len(hits), "source_url": EXCEL_URL}
+
+
+def _cli() -> None:
+    import sys
+    query = " ".join(sys.argv[1:]).strip()
+    with confluence._client() as client:
+        r = client.get(f"{confluence._base_url()}/rest/api/content/{page_id()}", params={"expand": "body.storage,version"})
+    print(f"Feedback page {page_id()}: HTTP {r.status_code}")
+    if r.status_code != 200:
+        print(r.text[:300]); raise SystemExit(1)
+    storage = r.json()["body"]["storage"]["value"]
+    sheets = parse(storage)
+    print(f"Page size: {len(storage):,} chars · h2 headings: {storage.count('<h2')} · tables: {storage.count('<table')}")
+    print(f"Parsed sheets: {len(sheets)}")
+    for s in sheets:
+        print(f"  - {s['sheet']}: {len(s['rows'])} rows, columns: {', '.join(s['headers'][:6])}")
+    if not sheets:
+        i = storage.find("<h2")
+        print("\nStructure sample (tags only):", re.sub(r">[^<]{1,}<", "><", storage[i:i + 600]))
+    if query:
+        _cache.update(at=0.0, data=None)
+        res = search(query)
+        print(f"\nSearch '{query}': {res.get('total_matches', 0)} matches")
+        for m in res.get("matches", [])[:5]:
+            print("  ", {k: v for k, v in list(m.items())[:4]})
+
+
+if __name__ == "__main__":
+    _cli()

@@ -169,14 +169,17 @@ def _run_tool(name: str, args: dict, read_pages: dict, mode: str = "cs") -> tupl
                 hits = notion.search(args.get("query", ""), args.get("limit") or 8)
             except notion.NotionNotConfigured:
                 return "User research (Notion) isn't connected yet. Use the other sources.", True
+            except notion.NotionLoading:
+                return ("User research is still loading (the first read after a restart takes a few minutes). "
+                        "Answer from the other sources and mention that research wasn't checked."), True
             except PermissionError:
                 raise NotionLoginError() from None
             return (json.dumps(hits, ensure_ascii=False) if hits else "No matching research pages."), False
         if name == "get_user_research_page":
             try:
                 pg = notion.get_page(args.get("page_id", ""))
-            except notion.NotionNotConfigured:
-                return "User research (Notion) isn't connected yet.", True
+            except (notion.NotionNotConfigured, notion.NotionLoading):
+                return "User research isn't available right now.", True
             except notion.NotionPageNotFound:
                 return "Research page not found.", True
             read_pages.setdefault("notion:" + pg["id"], {"title": pg["title"], "url": pg["url"],

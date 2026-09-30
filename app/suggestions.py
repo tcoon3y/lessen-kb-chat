@@ -10,7 +10,7 @@ import re
 import threading
 import time
 
-from app import config
+from app import config, db
 
 MIN_COUNT = 2
 WINDOW_SECONDS = 14 * 24 * 3600
@@ -60,12 +60,13 @@ def defaults(mode: str = "cs") -> list[str]:
 
 
 def top(mode: str = "cs") -> list[str]:
+    from_db = db.popular(mode, MIN_COUNT, WINDOW_SECONDS // 86400, SHOW) if db.ready() else None
     cutoff = time.time() - WINDOW_SECONDS
     with _lock:
         popular = sorted((v for v in _seen.values()
                           if v.get("mode", "cs") == mode and v["count"] >= MIN_COUNT and v["last"] >= cutoff),
                          key=lambda v: (v["count"], v["last"]), reverse=True)
-        picked = [v["text"] for v in popular[:SHOW]]
+        picked = [v["text"] for v in popular[:SHOW]] if from_db is None else list(from_db)
     for d in defaults(mode):  # top up with defaults
         if len(picked) >= SHOW:
             break

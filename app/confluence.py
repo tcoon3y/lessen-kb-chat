@@ -39,7 +39,8 @@ def _spaces() -> list[str]:
 
 def _count(response: httpx.Response) -> None:
     from app import usage  # local import avoids a cycle
-    usage.record_confluence(response.status_code, response.headers)
+    service = "notion" if "notion.com" in response.request.url.host else "atlassian"
+    usage.record_confluence(response.status_code, response.headers, service)
 
 
 def _client() -> httpx.Client:
