@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS chats (
     question_norm TEXT,
     answer        TEXT,
     sources       JSONB,
-    outcome       TEXT NOT NULL,          -- answered | not_documented | error | rate_limited
+    outcome       TEXT NOT NULL,          -- answered | partial | not_documented | error | rate_limited
     error_kind    TEXT,
     latency_ms    INTEGER,
     tool_calls    JSONB,
@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS chats (
     cost_usd      NUMERIC(10, 5) DEFAULT 0,
     history_turns INTEGER DEFAULT 0
 );
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS model          TEXT;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS rounds         INTEGER;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS tool_detail    JSONB;   -- [{tool, ms, ok, chars, error}]
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS tool_errors    INTEGER DEFAULT 0;
+ALTER TABLE chats ADD COLUMN IF NOT EXISTS failed_sources JSONB;   -- [{source, kind, tool}]
 CREATE INDEX IF NOT EXISTS chats_day_idx ON chats (day);
 CREATE INDEX IF NOT EXISTS chats_mode_norm_idx ON chats (mode, question_norm);
 
@@ -123,13 +128,16 @@ def log_chat(mode: str, question: str, answer: str | None, sources: list | None,
              session_id: str | None = None, history_turns: int = 0) -> None:
     meta = meta or {}
     t = meta.get("tokens") or {}
+    detail = meta.get("tool_detail") or []
     _run("""INSERT INTO chats (mode, session_id, question, question_norm, answer, sources, outcome, error_kind,
-                latency_ms, tool_calls, input_tokens, output_tokens, cache_read, cache_write, cost_usd, history_turns)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                latency_ms, tool_calls, input_tokens, output_tokens, cache_read, cache_write, cost_usd, history_turns,
+                model, rounds, tool_detail, tool_errors, failed_sources)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
          (mode, session_id, question, norm(question), answer, json.dumps(sources or []), outcome, error_kind,
           meta.get("latency_ms"), json.dumps(meta.get("tool_calls") or []), int(t.get("input", 0)),
           int(t.get("output", 0)), int(t.get("cache_read", 0)), int(t.get("cache_write", 0)), round(cost, 5),
-          history_turns))
+          history_turns, meta.get("model"), meta.get("rounds"), json.dumps(detail),
+          sum(1 for d in detail if d.get("error")), json.dumps(meta.get("failures") or [])))
 
 
 def log_event(kind: str, question: str, subject: str = "", note: str = "", mode: str | None = None,
@@ -206,3 +214,52 @@ def popular(mode: str, min_count: int = 2, days: int = 14, limit: int = 3) -> li
                    GROUP BY question_norm HAVING count(*) >= %s
                    ORDER BY n DESC, last DESC LIMIT %s""", (mode, days, min_count, limit), fetch=True)
     return None if rows is None else [r[0] for r in rows]
+
+
+def cost_by_mode(since_day: str) -> list[dict] | None:
+    """Per chat: volume, outcomes, cost per question (avg/median/p90), tokens, tool calls, time."""
+    rows = _run("""SELECT mode, count(*),
+                          count(*) FILTER (WHERE outcome IN ('answered', 'partial')),
+                          count(*) FILTER (WHERE outcome = 'not_documented'),
+                          count(*) FILTER (WHERE outcome IN ('error', 'rate_limited')),
+                          count(*) FILTER (WHERE coalesce(tool_errors, 0) > 0 OR outcome = 'partial'),
+                          coalesce(sum(cost_usd), 0)::float, coalesce(avg(cost_usd), 0)::float,
+                          coalesce(percentile_cont(0.5) WITHIN GROUP (ORDER BY cost_usd), 0)::float,
+                          coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY cost_usd), 0)::float,
+                          coalesce(avg(input_tokens), 0)::float, coalesce(avg(output_tokens), 0)::float,
+                          coalesce(sum(cache_read), 0)::float / nullif(sum(input_tokens + cache_read + cache_write), 0),
+                          coalesce(avg(jsonb_array_length(coalesce(tool_calls, '[]'::jsonb))), 0)::float,
+                          coalesce(avg(latency_ms), 0)::float,
+                          coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY latency_ms), 0)::float
+                   FROM chats WHERE day >= %s::date AND outcome <> 'rate_limited'
+                   GROUP BY mode ORDER BY mode""", (since_day,), fetch=True)
+    if rows is None:
+        return None
+    keys = ("mode", "questions", "answered", "not_documented", "errors", "source_problems", "total_cost",
+            "avg_cost", "median_cost", "p90_cost", "avg_input", "avg_output", "cache_share", "avg_tool_calls",
+            "avg_ms", "p90_ms")
+    return [dict(zip(keys, r)) for r in rows]
+
+
+def tool_stats(since_day: str) -> list[dict] | None:
+    """Per tool: calls, failures, average time and result size (from tool_detail)."""
+    rows = _run("""SELECT t->>'tool', count(*), count(*) FILTER (WHERE t->>'error' IS NOT NULL),
+                          coalesce(avg((t->>'ms')::int), 0)::float, coalesce(avg((t->>'chars')::int), 0)::float
+                   FROM chats, jsonb_array_elements(coalesce(tool_detail, '[]'::jsonb)) AS t
+                   WHERE day >= %s::date GROUP BY 1 ORDER BY 2 DESC""", (since_day,), fetch=True)
+    if rows is None:
+        return None
+    return [dict(zip(("tool", "calls", "failures", "avg_ms", "avg_chars"), r)) for r in rows]
+
+
+EXPORT_COLUMNS = ("created_at", "day", "mode", "outcome", "error_kind", "question", "model", "rounds", "tool_calls",
+                  "tool_errors", "failed_sources", "latency_ms", "input_tokens", "output_tokens", "cache_read",
+                  "cache_write", "cost_usd", "history_turns", "session_id")
+
+
+def export_rows(since_day: str) -> list[tuple] | None:
+    """One row per question for spreadsheets (no answer text)."""
+    return _run("""SELECT created_at::text, day::text, mode, outcome, error_kind, question, model, rounds,
+                           tool_calls::text, tool_errors, failed_sources::text, latency_ms, input_tokens,
+                           output_tokens, cache_read, cache_write, cost_usd::float, history_turns, session_id
+                    FROM chats WHERE day >= %s::date ORDER BY created_at""", (since_day,), fetch=True)

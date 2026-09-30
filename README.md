@@ -44,6 +44,12 @@ Set `SUGGESTED_QUESTIONS` (Customer success) and `SUGGESTED_QUESTIONS_PRODUCT` (
 - **Railway:** railway.com → project → Usage (Hobby plan, about $5/month).
 - Estimates assume $3 / $15 per million input/output tokens. Override with `PRICE_INPUT_PER_MTOK` and `PRICE_OUTPUT_PER_MTOK`.
 
+### Cost per question (reporting)
+The **Usage** page's "Cost per question" section (needs the database) shows, for each chat over the last 30 days: questions, average/typical/priciest-10% cost, lookups per question, share of input served from cache, average time, answer rate and source problems. A second table shows each lookup type (Confluence search, page read, Jira, Notion…) with calls, failures, time and size. **Download CSV** gives one row per question for the last 90 days (question, chat, outcome, model, rounds, lookups, tokens, cost, time; no answer text).
+
+### When a source fails
+If Confluence, Jira, Notion or the feedback tracker fails (expired token, no permission, rate limit, not responding, Notion still loading), a busy or unreachable source is retried once. If it still fails, the bot never answers "not documented". It shows a "Couldn't check Jira" style card instead, or answers from the sources that worked with a yellow "Couldn't check …" note. These show on the Usage page as source problems.
+
 ### Read the logs
 Railway → service → **Deployments** → Active → **View logs**. One line per question with outcome, latency, tool calls and token counts. Question and answer text never go to the logs (they're only in the database). Error lines name the problem (`confluence_login`, `claude_limit`, `rate_limited`, …).
 

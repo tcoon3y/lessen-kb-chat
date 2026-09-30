@@ -1,14 +1,17 @@
 """FastAPI entry point for Lessen Pro KB Chat."""
 from __future__ import annotations
 
+import csv
 import hmac
+import io
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 import json
 import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -103,6 +106,23 @@ def get_usage(x_passcode: str | None = Header(default=None)) -> dict:
     return usage.summary()
 
 
+@app.get("/api/usage/export.csv")
+def usage_export(days: int = 90, x_passcode: str | None = Header(default=None)) -> Response:
+    """Per-question metrics for a spreadsheet (question text, no answers). Needs the database."""
+    check_passcode(x_passcode)
+    if not db.ready():
+        raise HTTPException(404, "No database attached.")
+    since = (datetime.now(usage._CHICAGO).date() - timedelta(days=max(1, min(days, 400)) - 1)).isoformat()
+    rows = db.export_rows(since) or []
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(db.EXPORT_COLUMNS)
+    w.writerows(rows)
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="kb-bot-usage-{since}.csv"',
+                             "Cache-Control": "no-store"})
+
+
 @app.get("/api/doc-stats")
 def doc_stats(x_passcode: str | None = Header(default=None)) -> dict:
     check_passcode(x_passcode)
@@ -146,27 +166,32 @@ def chat(req: ChatRequest, request: Request, x_passcode: str | None = Header(def
             for event in agent.stream_answer(req.question, history, check_login=True, mode=req.mode):
                 if event["type"] == "done":
                     nd = bool(event.get("not_documented"))
-                    if event.get("sources") and not nd:
+                    outcome = "not_documented" if nd else "partial" if event.get("warnings") else "answered"
+                    if event.get("sources") and outcome == "answered":
                         suggestions.record(req.question, req.mode)
                     meta = event.get("meta", {})
                     usage.record_answer(meta, nd)
                     db.log_chat(req.mode, req.question, event.get("text"), event.get("sources"),
-                                "not_documented" if nd else "answered", meta,
+                                outcome, meta,
                                 cost=usage.cost(meta.get("tokens") or {}), session_id=req.session_id or None,
                                 history_turns=len(history))
                     # One line per request: numbers only, never question or answer text.
-                    log.info(json.dumps({"event": "chat", "mode": req.mode, "outcome": "not_documented" if nd else "answered",
+                    log.info(json.dumps({"event": "chat", "mode": req.mode, "outcome": outcome,
                                          "latency_ms": meta.get("latency_ms"), "tool_calls": meta.get("tool_calls"),
+                                         "failures": [f"{f['source']}:{f['kind']}" for f in meta.get("failures") or []],
                                          "tokens": meta.get("tokens"), "sources": len(event.get("sources") or []),
                                          "history_turns": len(history)}))
                 yield _sse(event)
         except Exception as exc:  # never leak details or content
             err = errors.classify(exc)
-            usage.record_error(err["kind"])
-            db.log_chat(req.mode, req.question, None, None, "error", error_kind=err["kind"],
-                        session_id=req.session_id or None, history_turns=len(history))
-            log.error(json.dumps({"event": "chat", "outcome": "error", "kind": err["kind"],
-                                  "exception": type(exc).__name__}))
+            meta = getattr(exc, "kb_meta", None) or {}
+            usage.record_error(err["kind"], meta.get("tokens"))
+            db.log_chat(req.mode, req.question, None, None, "error", meta, error_kind=err["kind"],
+                        cost=usage.cost(meta.get("tokens") or {}), session_id=req.session_id or None,
+                        history_turns=len(history))
+            log.error(json.dumps({"event": "chat", "mode": req.mode, "outcome": "error", "kind": err["kind"],
+                                  "exception": type(exc).__name__, "latency_ms": meta.get("latency_ms"),
+                                  "tool_calls": meta.get("tool_calls"), "tokens": meta.get("tokens")}))
             yield _sse({"type": "error", **err})
 
     return StreamingResponse(events(), media_type="text/event-stream",

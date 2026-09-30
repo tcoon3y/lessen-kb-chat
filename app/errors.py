@@ -21,12 +21,74 @@ class NotionLoginError(Exception):
     """Notion rejected the token, or the research page isn't shared with the integration."""
 
 
+class SourceFailure(Exception):
+    """A source (Confluence, Jira, Notion, feedback sheet) failed, so the bot couldn't check it.
+
+    Raised at the end of an answer instead of letting Claude say "not documented"."""
+
+    def __init__(self, failures: list[dict]):
+        super().__init__("source failure: " + ", ".join(f"{f['source']}:{f['kind']}" for f in failures))
+        self.failures = failures
+
+
+SOURCE_NAMES = {"confluence": "Confluence", "jira": "Jira", "notion": "Notion (user research)",
+                "sheet": "the feedback tracker"}
+REASONS = {
+    "login": "its login was rejected (the token may have expired)",
+    "no_access": "the bot doesn't have permission",
+    "rate_limit": "it's limiting requests right now",
+    "down": "it isn't responding",
+    "loading": "it's still loading after a restart (takes a few minutes)",
+    "not_connected": "it isn't connected yet",
+    "error": "it returned an error",
+}
+TRANSIENT = ("rate_limit", "down")
+
+
+def source_kind(exc: Exception) -> str:
+    """Map a failure while calling a source to a short kind (see REASONS)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code == 401:
+            return "login"
+        if code == 403:
+            return "no_access"
+        if code == 429:
+            return "rate_limit"
+        if code >= 500:
+            return "down"
+        return "error"
+    if isinstance(exc, httpx.TransportError):
+        return "down"
+    if isinstance(exc, (PermissionError, NotionLoginError, ConfluenceLoginError)):
+        return "login"
+    if isinstance(exc, ConfluenceUnavailable):
+        return "rate_limit" if exc.status == 429 else "down"
+    return "error"
+
+
+def failure_text(failures: list[dict]) -> str:
+    return "; ".join(f"{SOURCE_NAMES.get(f['source'], f['source'])}: {REASONS.get(f['kind'], REASONS['error'])}"
+                     for f in failures)
+
+
 def _msg(exc: Exception) -> str:
     return str(getattr(exc, "message", "") or exc).lower()
 
 
 def classify(exc: Exception) -> dict:
     """Return {"kind", "title", "text"} for the chat page, plus a log-safe kind."""
+    if isinstance(exc, SourceFailure) and exc.failures:
+        f0 = exc.failures[0]
+        names = [SOURCE_NAMES.get(f["source"], f["source"]) for f in exc.failures]
+        who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        only_waiting = all(f["kind"] in ("loading", "not_connected") for f in exc.failures)
+        owner = any(f["kind"] in ("login", "no_access") for f in exc.failures)
+        return {"kind": f"{f0['source']}_{f0['kind']}", "title": f"Couldn't check {who}",
+                "text": f"{failure_text(exc.failures)[0].upper()}{failure_text(exc.failures)[1:]}. "
+                        "So this isn't a sign the answer is undocumented; the bot just couldn't look. "
+                        + ("Please let the bot owner know." if owner else
+                           "Try again in a few minutes." if only_waiting else "Please try again in a minute.")}
     if isinstance(exc, ConfluenceLoginError):
         return {"kind": "confluence_login", "title": "Can't connect to Confluence",
                 "text": "The bot's Confluence access isn't working, so it can't look anything up. "

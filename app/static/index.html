@@ -140,6 +140,14 @@
   .sec-head a { font-size: 13px; }
   .tile.warn { border-color: #f0c36d; background: #fff8e6; }
   .tile.bad { border-color: #f3c1bb; background: var(--error-tint); }
+  .mtable-wrap { overflow-x: auto; }
+  .mtable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .mtable th { text-align: right; font-weight: 600; font-size: 12px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .mtable td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .mtable th:first-child, .mtable td:first-child { text-align: left; }
+  .mtable tr:last-child td { border-bottom: 0; }
+  .mtable td.bad { color: var(--error); font-weight: 600; }
+  .warnnote { margin: 6px 0 0; font-size: 13px; color: #8a5a00; background: #fff8e6; border: 1px solid #f0c36d; border-radius: 6px; padding: 6px 10px; }
   .meter { height: 6px; border-radius: 3px; background: var(--line); margin-top: 8px; overflow: hidden; }
   .meter i { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
 
@@ -280,6 +288,11 @@
           <div class="chart-head"><strong>Claude cost per day</strong><span class="note">Last 14 days · estimate</span></div>
           <div class="chart" id="chart"></div>
         </div>
+      </section>
+      <section class="usec" id="pqSec" hidden>
+        <div class="sec-head"><h2>Cost per question · last 30 days</h2><button class="linkbtn" type="button" id="csvBtn">Download CSV</button></div>
+        <div class="card chart-card mtable-wrap"><table class="mtable" id="pqTable"></table></div>
+        <div class="card chart-card mtable-wrap"><table class="mtable" id="toolTable"></table></div>
       </section>
       <section class="usec">
         <h2>Confluence, Jira &amp; Notion</h2>
@@ -514,6 +527,11 @@
     if (done && !failed) {
       a.bubble.innerHTML = render(done.text);
       addSources(a.wrap, done.sources);
+      if ((done.warnings || []).length) {
+        const w = document.createElement("p"); w.className = "warnnote";
+        w.textContent = "⚠ Couldn't check " + done.warnings.map((x) => x.text).join("; ") + ". This answer may be incomplete.";
+        a.wrap.appendChild(w);
+      }
       addActions(a.wrap, question, done);
       history.push({ role: "user", content: question }, { role: "assistant", content: done.text });
     } else if (!failed) {
@@ -579,7 +597,11 @@
   const nf = (n) => (n === null || n === undefined) ? "–" : n.toLocaleString();
   const ERR_NAMES = { claude_limit: "Claude usage limit reached", claude_rate_limit: "Claude rate limit", claude_down: "Claude busy",
     claude_auth: "Claude key rejected", confluence_login: "Confluence login failed", confluence_rate_limit: "Confluence rate limit",
-    confluence_down: "Confluence unreachable", notion_login: "Notion login failed", rate_limited: "People hitting the 20-question limit", unknown: "Other errors" };
+    confluence_down: "Confluence unreachable", notion_login: "Notion login failed", confluence_no_access: "Confluence access denied",
+    jira_login: "Jira login failed", jira_no_access: "Jira access denied", jira_rate_limit: "Jira rate limit", jira_down: "Jira unreachable", jira_error: "Jira errors",
+    notion_no_access: "Notion access denied", notion_rate_limit: "Notion rate limit", notion_down: "Notion unreachable", notion_loading: "Notion still loading",
+    notion_not_connected: "Notion not connected", notion_error: "Notion errors", sheet_login: "Feedback tracker login failed", sheet_down: "Feedback tracker unreachable",
+    sheet_error: "Feedback tracker errors", confluence_error: "Confluence errors", rate_limited: "People hitting the 20-question limit", unknown: "Other errors" };
 
   const usd = (n) => n == null ? "–" : `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString()}`;
   const tile = (label, value, sub, cls = "", meterPct = null) =>
@@ -636,6 +658,7 @@
             pct != null && pct < 10 ? "bad" : pct != null && pct < 25 ? "warn" : "", pct);
         })()
                : tile("Burst limit headroom", "Not reported", "Atlassian hasn't sent limit figures. Rate-limit hits above are the signal to watch."));
+    renderPerQuestion(u.per_question);
     const errs = Object.entries(u.error_kinds || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     $("errCard").hidden = !errs.length;
     $("errList").innerHTML = errs.map(([k, n]) => `<li>${esc(ERR_NAMES[k] || k)}: <b>${n}</b></li>`).join("");
@@ -646,6 +669,41 @@
       "Costs are estimates; check console.anthropic.com for exact billing. Doc request counts come live from Confluence.";
     loadDocStats();
   }
+
+  const MODE_NAMES = { cs: "Customer success", product: "Product", feedback: "User feedback" };
+  const TOOL_NAMES = { search_confluence: "Confluence search", get_page: "Confluence page read", search_jira: "Jira search",
+    get_jira_issue: "Jira ticket read", search_user_research: "Notion search", get_user_research_page: "Notion page read",
+    search_feedback_tracker: "Feedback tracker search" };
+  const cents = (n) => n == null ? "–" : n < 1 ? `${(n * 100).toFixed(1)}¢` : `$${n.toFixed(2)}`;
+  const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  function renderPerQuestion(pq) {
+    $("pqSec").hidden = !pq;
+    if (!pq) return;
+    const rows = pq.by_mode;
+    $("pqTable").innerHTML = rows.length ? "<tr><th>Chat</th><th>Questions</th><th>Avg cost</th><th>Typical</th><th>Priciest 10%</th>" +
+      "<th>Total</th><th>Lookups / q</th><th>Cached input</th><th>Avg time</th><th>Answered</th><th>Source problems</th></tr>" +
+      rows.map((m) => `<tr><td>${esc(MODE_NAMES[m.mode] || m.mode)}</td><td>${nf(m.questions)}</td><td>${cents(m.avg_cost)}</td>` +
+        `<td>${cents(m.median_cost)}</td><td>${cents(m.p90_cost)}</td><td>${usd(m.total_cost)}</td><td>${m.avg_tool_calls.toFixed(1)}</td>` +
+        `<td>${m.cache_share == null ? "–" : Math.round(100 * m.cache_share) + "%"}</td><td>${secs(m.avg_ms)}</td>` +
+        `<td>${m.questions ? Math.round(100 * m.answered / m.questions) : 0}%</td>` +
+        `<td class="${m.source_problems ? "bad" : ""}">${nf(m.source_problems)}</td></tr>`).join("")
+      : "<tr><td>No questions yet in the last 30 days.</td></tr>";
+    const t = pq.tools;
+    $("toolTable").innerHTML = t.length ? "<tr><th>Lookup</th><th>Calls</th><th>Failures</th><th>Avg time</th><th>Avg size (chars)</th></tr>" +
+      t.map((x) => `<tr><td>${esc(TOOL_NAMES[x.tool] || x.tool)}</td><td>${nf(x.calls)}</td>` +
+        `<td class="${x.failures ? "bad" : ""}">${nf(x.failures)}</td><td>${secs(x.avg_ms)}</td><td>${nf(Math.round(x.avg_chars))}</td></tr>`).join("")
+      : "<tr><td>Lookup details start with questions asked from now on.</td></tr>";
+  }
+  $("csvBtn").addEventListener("click", async () => {
+    const b = $("csvBtn"); b.textContent = "Preparing…";
+    try {
+      const r = await fetch("/api/usage/export.csv?days=90", { headers: headers() });
+      if (!r.ok) throw new Error();
+      const url = URL.createObjectURL(await r.blob()), a = document.createElement("a");
+      a.href = url; a.download = `kb-bot-usage-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000); b.textContent = "Download CSV";
+    } catch (e) { b.textContent = "Couldn't download. Try again"; }
+  });
 
   let docsLoaded = false;
   async function loadDocStats() {

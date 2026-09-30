@@ -3,7 +3,7 @@
 Source of truth: "Lessen Pro KB Chat — AI Build Kit" (Sep 2026).
 
 ## What this is
-Private web chat answering Lessen Pro questions from Confluence. Python 3.12, FastAPI, Anthropic Python SDK, httpx. No database, no frontend framework, no build step. Hosted on Railway (Hobby).
+Private web chat answering Lessen Pro questions from Confluence. Python 3.12, FastAPI, Anthropic Python SDK, httpx. Optional Postgres (DATABASE_URL), no frontend framework, no build step. Hosted on Railway (Hobby).
 
 ## Layout
 - `app/main.py` — FastAPI: `GET /healthz`, `GET /` (chat page), `POST /api/chat` (SSE stream)
@@ -15,11 +15,11 @@ Private web chat answering Lessen Pro questions from Confluence. Python 3.12, Fa
 
 - `Dockerfile` + `railway.json` — Railway builds the Docker image; health check `/healthz`
 - `app/docs_requests.py` — the ONLY write: fills a row in the Documentation Requests table (DOCS_REQUEST_PAGE_ID); follows the table's header columns (Subject, Question, optional Type, DONE?, DOC Ref)
-- `app/errors.py` — maps Claude/Confluence failures to user-facing error cards
+- `app/errors.py` — maps Claude/Confluence failures to user-facing error cards; `SourceFailure` + `source_kind` for any source (confluence/jira/notion/sheet). A failed source is retried once if transient, reported to Claude as SOURCE UNAVAILABLE, and never allowed to become "not documented" (error card, or answer + warning)
 - `app/usage.py` — in-memory counts (no text), cost estimates, 20 q / 10 min rate limit
 - `app/suggestions.py` — popular questions (asked 2+ times with a cited answer), memory only
 - Chat modes: `cs` (Confluence tools only), `product` (+ search_jira, get_jira_issue on JIRA_PROJECTS) and `feedback` (Notion research, feedback sheet, Jira on JIRA_PROJECTS_FEEDBACK; own prompt `app/prompts/feedback.md`). Tools outside a mode's list are refused in code.
-- `app/db.py` — optional Postgres storage (psycopg): tables chats, events, api_calls; daily retention cleanup; Usage page and popular questions read from it when present
+- `app/db.py` — optional Postgres storage (psycopg): tables chats (incl. model, rounds, tool_detail, tool_errors, failed_sources), events, api_calls; cost-per-question reports + CSV export (`/api/usage/export.csv`); daily retention cleanup; Usage page and popular questions read from it when present
 - `app/notion.py` — read-only Notion crawl of NOTION_ROOT_PAGE_ID tree, in-memory text index refreshed every 30 min
 - `app/feedback_sheet.py` — parses the Confluence mirror (FEEDBACK_PAGE_ID) of Lessen Pro Feedback.xlsx; a daily scheduled Claude task keeps it in sync
 - UI views: Customer success / Product chats (separate histories), Request a doc (form), Usage (dashboard); copy answer, report incorrect answer, source freshness dates

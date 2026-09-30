@@ -70,12 +70,14 @@ def record_answer(meta: dict, not_documented: bool) -> None:
             d[k] += int(t.get(k, 0))
 
 
-def record_error(kind: str) -> None:
+def record_error(kind: str, tokens: dict | None = None) -> None:
     with _lock:
         d = _days[_today()]
         d["questions"] += 1
         d["errors"] += 1
         _error_kinds[kind] += 1
+        for k in ("input", "output", "cache_read", "cache_write"):  # a failed run still costs what it used
+            d[k] += int((tokens or {}).get(k, 0))
 
 
 QUOTA_HEADERS = ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
@@ -192,8 +194,19 @@ def summary(days: int = 14) -> dict:
             "quota": quota or None,
         },
         "error_kinds": errors,
+        "per_question": _per_question(today) if stored else None,
         "rate_limit": f"{RATE_LIMIT} questions per {RATE_WINDOW // 60} minutes per person",
     }
+
+
+def _per_question(today: date, days: int = 30) -> dict | None:
+    since = (today - timedelta(days=days - 1)).isoformat()
+    by_mode, tools = db.cost_by_mode(since), db.tool_stats(since)
+    if by_mode is None:
+        return None
+    r2 = lambda v, n=4: round(v, n) if isinstance(v, float) else v  # noqa: E731
+    return {"days": days, "by_mode": [{k: r2(v) for k, v in m.items()} for m in by_mode],
+            "tools": [{k: r2(v, 1) for k, v in t.items()} for t in tools or []]}
 
 
 def reset() -> None:

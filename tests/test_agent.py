@@ -170,3 +170,59 @@ def test_product_mode_reads_jira(fake_confluence, monkeypatch):
 
 def test_product_not_found_phrase_detected():
     assert agent.is_not_documented("I couldn't find this documented in Confluence or Jira. Related: x")
+
+
+# ---------- source failures never turn into "not documented" ----------
+
+def _http_error(status):
+    import httpx
+    req = httpx.Request("POST", "https://x/rest/api/3/search/jql")
+    return httpx.HTTPStatusError("x", request=req, response=httpx.Response(status, request=req))
+
+
+def test_jira_down_and_not_documented_becomes_error(fake_confluence, monkeypatch):
+    from app import errors, jira
+    calls = []
+    monkeypatch.setattr(agent, "RETRY_DELAY", 0)
+    monkeypatch.setattr(jira, "search", lambda *a, **k: calls.append(1) or (_ for _ in ()).throw(_http_error(503)))
+    client = FakeClient([tool_turn("search_jira", {"query": "autopay"}), text_turn(agent.NOT_FOUND_TEXT)])
+    with pytest.raises(errors.SourceFailure) as ei:
+        list(agent.stream_answer("Is autopay shipped?", [], client, mode="product"))
+    assert len(calls) == 2  # retried once
+    assert ei.value.failures == [{"source": "jira", "kind": "down", "tool": "search_jira"}]
+    assert ei.value.kb_meta["tokens"]["input"] == 200 and ei.value.kb_meta["tool_detail"][0]["error"] == "down"
+    res = client.calls[1]["messages"][-1]["content"][0]
+    assert res["content"].startswith("SOURCE UNAVAILABLE: Jira")
+    card = errors.classify(ei.value)
+    assert card["kind"] == "jira_down" and card["title"] == "Couldn't check Jira"
+
+
+def test_partial_answer_carries_warning(fake_confluence, monkeypatch):
+    from app import jira
+    monkeypatch.setattr(jira, "search", lambda *a, **k: (_ for _ in ()).throw(_http_error(401)))
+    client = FakeClient([tool_turn("search_jira", {"query": "autopay"}),
+                         tool_turn("get_page", {"page_id": "1"}, tid="t2"),
+                         text_turn("Free tier covers Lessen work only. Jira couldn't be checked.")])
+    done = list(agent.stream_answer("Free tier?", [], client, mode="product"))[-1]
+    assert done["type"] == "done" and not done["not_documented"]
+    assert done["warnings"][0]["source"] == "jira" and "login" in done["warnings"][0]["text"]
+    assert done["meta"]["rounds"] == 3 and done["meta"]["model"] == "test-model"
+
+
+def test_bad_query_is_not_a_source_failure(fake_confluence, monkeypatch):
+    from app import jira
+    monkeypatch.setattr(jira, "search", lambda *a, **k: (_ for _ in ()).throw(_http_error(400)))
+    client = FakeClient([tool_turn("search_jira", {"query": "a\"b"}), text_turn(agent.NOT_FOUND_TEXT)])
+    done = list(agent.stream_answer("x", [], client, mode="product"))[-1]
+    assert done["not_documented"] and done["warnings"] == []
+
+
+def test_notion_loading_reported_not_hidden(monkeypatch):
+    from app import errors, notion
+    monkeypatch.setenv("CLAUDE_MODEL", "test-model")
+    monkeypatch.setattr(notion, "search", lambda *a, **k: (_ for _ in ()).throw(notion.NotionLoading()))
+    client = FakeClient([tool_turn("search_user_research", {"query": "scheduling"}),
+                         text_turn("I couldn't find this in user research, the feedback tracker or Jira.")])
+    with pytest.raises(errors.SourceFailure) as ei:
+        list(agent.stream_answer("Scheduling feedback?", [], client, mode="feedback"))
+    assert "Try again in a few minutes" in errors.classify(ei.value)["text"]
